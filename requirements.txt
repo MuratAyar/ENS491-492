@@ -1,0 +1,12 @@
+streamlit
+openai
+PyPDF2
+pandas
+numpy
+scikit-learn
+langchain
+langchain_community
+langchain_text_splitters
+langchain_core
+langchain_ollama
+pdfplumber

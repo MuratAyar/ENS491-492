@@ -1,0 +1,10 @@
+review,analyzing_sentiment,category,response,expected_stars,score
+App works well and Yapikredi bank staff helpful.,Positive,Service,"""We're glad you found our app to be working smoothly and that the support from Yapikredi bank was helpful.""",5,5
+Disgrace,Negative,Errors & Bugs,"""I apologize for the inconvenience caused by the error. We will look into resolving this issue as soon as possible.""",1,1
+Maybe I can say it is the best bank in Turkey.,Positive,Features,"""We're thrilled to hear that we've exceeded your expectations!""",5,5
+Good,Positive,Service,"""Thanks for your kind words! We're glad you enjoyed your experience.""",5,4
+I can't access and use the application I have been using for years from the same phone due to the root jailbreak error. Why doesn't Yapı Kredi work while other bank applications work?,Negative,Errors & Bugs,"""We apologize for the inconvenience you're experiencing with our application on your rooted device. We'll look into this issue and provide a solution as soon as possible.""",1,1
+Super comfortable to use it.,Positive,Service,"""We're glad you're enjoying your purchase!""",5,5
+too good,Positive,Features,"""You're welcome! Glad you enjoyed it!""",5,5
+perfect 👌,Positive,General Feedback,"""Thanks so much! We're glad you loved your experience!""",5,5
+ok,Neutral,Service,"""Thank you for your feedback. We'll continue working to improve our service.""",3,5
