@@ -5,26 +5,27 @@ from langchain_ollama import OllamaEmbeddings
 import os
 
 # File paths
-PDF_PATH = "data/responding-to-customer-reviews.pdf"
-INDEX_DIR = "embeddings/chroma_index"
+PDF_PATH = "data/caregiver_best_practices.pdf"  # Ensure this file exists
+INDEX_DIR = "embeddings/chroma_index"  # Not needed for `persist()`
 
 def create_index():
-    # Load the PDF document
-    print("Loading PDF...")
+    """Load caregiving guidelines, split text, and create a Chroma index."""
+    print("Loading caregiver guidance PDF...")
     loader = PDFPlumberLoader(PDF_PATH)
     documents = loader.load()
 
     # Split the documents into chunks
-    print("Splitting documents into chunks...")
+    print("Splitting caregiver document into sections...")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     texts = text_splitter.split_documents(documents)
 
-    # Generate embeddings and create Chroma index
-    print("Creating embeddings and Chroma index...")
-    embeddings = OllamaEmbeddings()
+    # Explicitly specify LLM model for embeddings
+    print("Creating embeddings for caregiver best practices...")
+    embeddings = OllamaEmbeddings(model="llama3.1")  # Ensure this model is available
     vector_store = Chroma.from_documents(texts, embeddings)
-    vector_store.persist(INDEX_DIR)
-    print(f"Chroma index saved to {INDEX_DIR}")
+
+    # 🔹 Remove the incorrect persist line, since Chroma auto-persists now
+    print("Chroma index created successfully!")
 
 if __name__ == "__main__":
     create_index()

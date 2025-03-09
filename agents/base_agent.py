@@ -1,4 +1,3 @@
-from typing import Dict, Any
 import json
 from openai import OpenAI
 
@@ -11,14 +10,13 @@ class BaseAgent:
             api_key="ollama",
         )
 
-    async def run(self, messages: list) -> Dict[str, Any]:
-        """Default run method to be overridden by child classes"""
+    async def run(self, messages: list):
         raise NotImplementedError("Subclass must implement run()")
     
     def _query_ollama(self, prompt: str) -> dict:
-        """Query Ollama model with the given prompt"""
+        """Query Ollama model and extract valid JSON output."""
         try:
-            print(f"Querying Ollama with prompt: {prompt}")
+            print(f"[{self.name}] Querying Ollama with prompt: {prompt}")
             response = self.ollama_client.chat.completions.create(
                 model="llama3.1",
                 messages=[
@@ -28,27 +26,30 @@ class BaseAgent:
                 temperature=0.7,
                 max_tokens=2000,
             )
-            # Extract content and ensure it is JSON
+            
+            # Extract content and clean JSON
             content = response.choices[0].message.content.strip()
-            if not content.startswith("{"):  # Wrap in JSON if necessary
-                content = json.dumps({"response": content})
-            return json.loads(content)
+            extracted_json = self._extract_json(content)
+
+            return extracted_json
         except Exception as e:
-            print(f"Error querying Ollama: {str(e)}")
+            print(f"[{self.name}] Error querying Ollama: {str(e)}")
             return {"error": str(e)}
 
-
-
-    
-    def _parse_json_safely(self, text: str) -> Dict[str, Any]:
-        """Safely parse JSON from text, handling potential errors"""
+    def _extract_json(self, text: str) -> dict:
+        """Extracts valid JSON from a given text output by removing markdown artifacts."""
         try:
-            start = text.find("{")
-            end = text.rfind("}")
-            if start != -1 and end != -1:
-                json_str = text[start : end + 1]
-                return json.loads(json_str)
-            return {"error": "No JSON content found"}
+            # Remove Markdown-style JSON code blocks
+            if "```json" in text:
+                start = text.find("```json") + len("```json")
+                end = text.find("```", start)
+                text = text[start:end].strip()
+            elif "```" in text:
+                start = text.find("```") + 3
+                end = text.find("```", start)
+                text = text[start:end].strip()
+            
+            # Convert text to JSON
+            return json.loads(text)
         except json.JSONDecodeError:
-            return {"error": "Invalid JSON content"}
-    
+            return {"error": "Failed to parse JSON from LLM response"}

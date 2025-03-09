@@ -1,50 +1,47 @@
 from typing import Dict, Any
 from .base_agent import BaseAgent
-from datetime import datetime
 import json
-
 
 class AnalyzerAgent(BaseAgent):
     def __init__(self):
         super().__init__(
             name="Analyzer",
-            instructions="Analyze the sentiment and extract key insights from the review."
+            instructions="Analyze the caregiver-child interaction transcript. "
+                         "Evaluate sentiment, caregiver tone, and responsiveness. "
+                         "Provide structured feedback with a JSON output."
         )
-    
+
     async def run(self, messages: list) -> Dict[str, Any]:
-        """Analyze the review"""
-        print("Analyzer: Conducting initial analyzing")
+        """Analyze the caregiver-child interaction"""
+        print("[Analyzer] Conducting sentiment and interaction analysis")
 
         try:
-            workflow_context = json.loads(messages[-1]["content"])
-            print(f"Workflow context: {workflow_context}")
+            transcript_data = json.loads(messages[-1]["content"])
+            conversation = transcript_data.get("transcript", "")
+            if not conversation:
+                return {"error": "No transcript provided for analysis."}
 
-            # Query the model
-            analyzer_result = self._query_ollama(json.dumps(workflow_context))
-            print(f"Analyzer result: {analyzer_result}")
+            # Create analysis prompt
+            prompt = (
+                f"Analyze the following caregiver-child conversation:\n\n{conversation}\n\n"
+                "Identify caregiver sentiment (Positive, Neutral, Negative), tone, empathy level, "
+                "and responsiveness. Provide feedback on caregiver behavior.\n\n"
+                "Return the output in JSON format as:\n"
+                '{ "sentiment": "<Positive/Neutral/Negative>", '
+                '"tone": "<tone description>", '
+                '"empathy": "<high/medium/low>", '
+                '"responsiveness": "<engaged/passive/dismissive>", '
+                '"feedback": "<caregiver performance summary>" }'
+            )
 
-            if "error" in analyzer_result:
-                return {"error": analyzer_result["error"]}
+            # Query Llama model
+            analysis_result = self._query_ollama(prompt)
+            print(f"[Analyzer] Analysis result: {analysis_result}")
 
-            # Extract sentiment from the response
-            sentiment = "Neutral"
-            response_text = analyzer_result.get("response", "")
-            if "**Sentiment:**" in response_text:
-                start = response_text.find("**Sentiment:**") + len("**Sentiment:**")
-                end = response_text.find("\n", start)
-                raw_sentiment = response_text[start:end].strip()
-                sentiment = "Positive" if "positive" in raw_sentiment.lower() else "Negative" if "negative" in raw_sentiment.lower() else "Neutral"
+            if "error" in analysis_result:
+                return {"error": analysis_result["error"]}
 
-            return {
-                "analyzing_report": response_text,
-                "analyzing_sentiment": sentiment,
-            }
+            return analysis_result
         except (json.JSONDecodeError, KeyError, IndexError) as e:
-            print(f"Error analyzing review: {e}")
-            return {"error": "Failed to analyze the review. Please check the input format."}
-
-
-
-
-        
-    
+            print(f"[Analyzer] Error analyzing transcript: {e}")
+            return {"error": "Failed to analyze the transcript. Please check the input format."}

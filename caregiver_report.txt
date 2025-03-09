@@ -1,0 +1,17 @@
+Caregiver Monitoring Report
+========================================
+Sentiment: Positive
+Tone: Encouraging and playful, with a touch of gentle firmness
+Empathy Level: Medium
+Responsiveness: Engaged
+
+Primary Category: Nutrition
+Secondary Categories: Responsive Caregiving
+
+Performance Score: 4/5
+Justification: The caregiver shows empathy and understanding towards the child's resistance to eating vegetables. They offer a creative solution by making a 'fun plate' with carrots and hummus, which encourages the child to try new foods. The caregiver also sets boundaries in a gentle manner (offering fries as a treat for finishing veggies), showing responsiveness and engagement.
+
+Parent Notification:
+Your child's caregiver did an excellent job encouraging healthy eating habits through positive language and creative solutions. They successfully balanced empathy with setting boundaries, allowing your child to feel heard while still meeting nutritional needs.
+Recommendations:
+[{'category': 'Nutrition', 'description': 'Encourage the caregiver to vary their approach to mealtime interactions, such as engaging the child in recipe planning or cooking processes.'}, {'category': 'Communication', 'description': 'Consider training or guidance on explicitly teaching children about nutrient-dense foods and the benefits of a balanced diet.'}]

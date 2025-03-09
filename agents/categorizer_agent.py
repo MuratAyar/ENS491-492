@@ -6,41 +6,43 @@ class CategorizerAgent(BaseAgent):
     def __init__(self):
         super().__init__(
             name="Categorizer",
-            instructions="Categorize the given review into one of the categories: "
-                         "Errors & Bugs, Features, Costs, Service, General Feedback."
+            instructions="Categorize the given caregiver-child conversation into one or more of the categories: "
+                         "Nutrition, Early Learning, Health, Responsive Caregiving, and Safety & Security. "
+                         "Return JSON output with primary and secondary categories."
         )
-    
+
     async def run(self, messages: list) -> Dict[str, Any]:
-        """Categorize the review"""
-        print("Categorizer: Categorizing review")
+        """Categorize the conversation"""
+        print("[Categorizer] Categorizing transcript")
 
         try:
-            review_data = json.loads(messages[-1]["content"])  # Parse JSON string
-            review = review_data.get("review", "")
-            sentiment = review_data.get("analyzing_sentiment", "Neutral")
-            print(f"Categorizer input review: {review} with sentiment: {sentiment}")
-
-            if not review:
-                return {"error": "No review content found to categorize."}
+            transcript_data = json.loads(messages[-1]["content"])
+            transcript = transcript_data.get("transcript", "")
+            if not transcript:
+                return {"error": "No transcript content found for categorization."}
 
             # Create categorization prompt
             prompt = (
-                f"Categorize the following review based on sentiment ('{sentiment}') and content: '{review}'"
+                f"Analyze the following caregiver-child conversation:\n\n{transcript}\n\n"
+                "Determine the primary caregiving category:\n"
+                "- Nutrition\n"
+                "- Early Learning\n"
+                "- Health\n"
+                "- Responsive Caregiving\n"
+                "- Safety & Security\n\n"
+                "If the conversation contains multiple caregiving aspects, list secondary categories as well.\n\n"
+                "Return the output in JSON format as:\n"
+                '{ "primary_category": "<Category>", '
+                '"secondary_categories": ["<Category1>", "<Category2>"] }'
             )
+
             categorization_result = self._query_ollama(prompt)
-            print(f"Categorization result: {categorization_result}")
+            print(f"[Categorizer] Categorization result: {categorization_result}")
 
-            # Extract category name
-            category_text = categorization_result.get("response", "")
-            category = "General Feedback"  # Default value
-            predefined_categories = ["Errors & Bugs", "Features", "Costs", "Service", "General Feedback"]
-            for predefined in predefined_categories:
-                if predefined.lower() in category_text.lower():
-                    category = predefined
-                    break
+            if "error" in categorization_result:
+                return {"error": categorization_result["error"]}
 
-            return {"review": review, "category": category}
+            return categorization_result
         except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
-            print(f"Error categorizing review: {e}")
-            return {"error": "Failed to categorize the review. Please check the input format."}
-
+            print(f"[Categorizer] Error categorizing transcript: {e}")
+            return {"error": "Failed to categorize the transcript. Please check the input format."}

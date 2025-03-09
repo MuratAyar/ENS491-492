@@ -5,45 +5,37 @@ import json
 class StarReviewerAgent(BaseAgent):
     def __init__(self):
         super().__init__(
-            name="StarReviewer",
-            instructions="Predict a star rating (1-5) for the review based on its sentiment and content. "
-                         "Ensure the output is in a valid JSON format."
+            name="CaregiverScorer",
+            instructions="Evaluate the caregiver's performance in the given conversation. "
+                         "Assign a score from 1 to 5 based on empathy, responsiveness, and engagement. "
+                         "Return JSON output with a score and justification."
         )
 
-    async def run(self, review: str, sentiment: str) -> Dict[str, Any]:
-        """Predict a star rating for the review based on its sentiment and content."""
+    async def run(self, transcript: str, sentiment: str, responsiveness: str) -> Dict[str, Any]:
+        """Assign an overall caregiver rating"""
+        print("[CaregiverScorer] Evaluating caregiver performance")
+
         try:
-            # Create a prompt with JSON format enforcement
-            prompt = (f"Based on the following review and its sentiment, assign an appropriate star rating "
-                      f"from 1 to 5. A negative review should have a rating close to 1, and a positive review "
-                      f"should have a rating close to 5. Ensure the output is a valid JSON object.\n\n"
-                      f"Sentiment: {sentiment}\n"
-                      f"Review: {review}\n\n"
-                      f"Output only the JSON object:\n"
-                      f'{{"expected_stars": <integer from 1 to 5>}}')
+            # Create caregiver scoring prompt
+            prompt = (
+                f"Based on the following caregiver-child conversation:\n\n{transcript}\n\n"
+                f"Sentiment: {sentiment}\n"
+                f"Responsiveness: {responsiveness}\n\n"
+                "Assign a caregiver score from 1 to 5:\n"
+                "- 5: Highly empathetic, responsive, and engaged.\n"
+                "- 3-4: Neutral interactions, average responsiveness.\n"
+                "- 1-2: Harsh, dismissive, or passive caregiving.\n\n"
+                "Return the output in JSON format as:\n"
+                '{ "caregiver_score": <1-5>, "justification": "<reasoning>" }'
+            )
 
-            # Query the model
             response = self._query_ollama(prompt)
-            raw_response = response.get("response", "").strip()
+            print(f"[CaregiverScorer] Caregiver score result: {response}")
 
-            # Parse the response as JSON
-            parsed_response = json.loads(raw_response)
+            if "error" in response:
+                return {"error": response["error"]}
 
-            # Validate the parsed JSON
-            predicted_stars = parsed_response.get("expected_stars")
-            if isinstance(predicted_stars, int) and 1 <= predicted_stars <= 5:
-                return {"expected_stars": predicted_stars}
-            else:
-                raise ValueError("Invalid JSON format or out-of-range value")
+            return response
         except (json.JSONDecodeError, ValueError) as e:
-            print(f"Error processing response: {e}")
-            # Fallback logic for invalid predictions
-            if sentiment.lower() == "negative":
-                return {"expected_stars": 1}
-            elif sentiment.lower() == "neutral":
-                return {"expected_stars": 3}
-            elif sentiment.lower() == "positive":
-                return {"expected_stars": 5}
-        except Exception as e:
-            print(f"Unexpected error: {e}")
-            return {"expected_stars": 3}  # Default fallback
+            print(f"[CaregiverScorer] Error processing response: {e}")
+            return {"error": "Failed to evaluate caregiver performance."}
