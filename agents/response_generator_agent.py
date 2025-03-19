@@ -2,7 +2,7 @@ from typing import Dict, Any
 from .base_agent import BaseAgent
 import json
 from langchain_ollama import OllamaEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 
 class ResponseGeneratorAgent(BaseAgent):
     def __init__(self):
@@ -35,7 +35,7 @@ class ResponseGeneratorAgent(BaseAgent):
                 return {"error": "No transcript content found for generating a response."}
 
             # Retrieve caregiving best practices related to category
-            context_docs = self.retriever.get_relevant_documents(category)
+            context_docs = self.retriever.invoke(category)
             context_text = "\n".join([doc.page_content for doc in context_docs])
 
             # Create parent notification prompt
@@ -49,16 +49,33 @@ class ResponseGeneratorAgent(BaseAgent):
                 f"Use caregiving best practices from:\n{context_text}\n\n"
                 "Provide a summary in JSON format as:\n"
                 '{ "parent_notification": "<brief, polite summary>", '
-                '"recommendations": "<suggestions for improvement, if needed>" }'
+                '"recommendations": ["suggestions for improvement, if needed"] }'
             )
 
+
             response_result = self._query_ollama(prompt)
+
+            # Ensure JSON format is extracted before returning
+            if isinstance(response_result, str):
+                response_result = self._extract_json(response_result)
+
+            # Fix recommendations format
+            # Fix recommendations format if returned as a list of strings
+            if isinstance(response_result.get("recommendations"), list):
+                response_result["recommendations"] = [
+                    {"category": "General", "description": rec} if isinstance(rec, str) else rec
+                    for rec in response_result["recommendations"]
+                ]
+
+
             print(f"[ParentNotifier] Parent notification result: {response_result}")
 
             if "error" in response_result:
                 return {"error": response_result["error"]}
 
             return response_result
+
+
         except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
             print(f"[ParentNotifier] Error generating response: {e}")
             return {"error": "Failed to generate parent notification."}

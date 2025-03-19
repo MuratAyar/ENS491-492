@@ -39,7 +39,7 @@ class BaseAgent:
     def _extract_json(self, text: str) -> dict:
         """Extracts valid JSON from a given text output by removing markdown artifacts."""
         try:
-            # Remove Markdown-style JSON code blocks
+            # Handle Markdown-style JSON code blocks
             if "```json" in text:
                 start = text.find("```json") + len("```json")
                 end = text.find("```", start)
@@ -48,8 +48,13 @@ class BaseAgent:
                 start = text.find("```") + 3
                 end = text.find("```", start)
                 text = text[start:end].strip()
-            
+
             # Convert text to JSON
             return json.loads(text)
         except json.JSONDecodeError:
+            # If parsing fails, return error
             return {"error": "Failed to parse JSON from LLM response"}
+        except Exception as e:
+            # General error handling
+            return {"error": str(e)}
+

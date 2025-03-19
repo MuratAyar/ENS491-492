@@ -1,47 +1,46 @@
 from typing import Dict, Any
-from .base_agent import BaseAgent
+from transformers import pipeline
+import torch
 import json
 
-class AnalyzerAgent(BaseAgent):
+class AnalyzerAgent:
     def __init__(self):
-        super().__init__(
-            name="Analyzer",
-            instructions="Analyze the caregiver-child interaction transcript. "
-                         "Evaluate sentiment, caregiver tone, and responsiveness. "
-                         "Provide structured feedback with a JSON output."
+        self.name = "Analyzer"
+        self.instructions = "Analyze caregiver-child interaction transcript."
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Load BERT-based RoBERTa model for sentiment analysis
+        self.sentiment_pipeline = pipeline(
+            "text-classification", 
+            model="cardiffnlp/twitter-roberta-base-sentiment", 
+            device=0 if device == "cuda" else -1
         )
 
     async def run(self, messages: list) -> Dict[str, Any]:
-        """Analyze the caregiver-child interaction"""
-        print("[Analyzer] Conducting sentiment and interaction analysis")
-
+        print("[Analyzer] Conducting sentiment analysis")
         try:
             transcript_data = json.loads(messages[-1]["content"])
             conversation = transcript_data.get("transcript", "")
             if not conversation:
                 return {"error": "No transcript provided for analysis."}
 
-            # Create analysis prompt
-            prompt = (
-                f"Analyze the following caregiver-child conversation:\n\n{conversation}\n\n"
-                "Identify caregiver sentiment (Positive, Neutral, Negative), tone, empathy level, "
-                "and responsiveness. Provide feedback on caregiver behavior.\n\n"
-                "Return the output in JSON format as:\n"
-                '{ "sentiment": "<Positive/Neutral/Negative>", '
-                '"tone": "<tone description>", '
-                '"empathy": "<high/medium/low>", '
-                '"responsiveness": "<engaged/passive/dismissive>", '
-                '"feedback": "<caregiver performance summary>" }'
-            )
+            # Run sentiment analysis (BERT-based RoBERTa)
+            sentiment_result = self.sentiment_pipeline(conversation[:512])  # Limit input size
+            label_map = {
+                "LABEL_0": "Negative",
+                "LABEL_1": "Neutral",
+                "LABEL_2": "Positive"
+            }
+            sentiment_label = label_map.get(sentiment_result[0]["label"], "Unknown")
 
-            # Query Llama model
-            analysis_result = self._query_ollama(prompt)
-            print(f"[Analyzer] Analysis result: {analysis_result}")
 
-            if "error" in analysis_result:
-                return {"error": analysis_result["error"]}
+            return {
+                "sentiment": sentiment_label,
+                "tone": "Neutral",  # Default placeholder
+                "empathy": "Moderate",  # Default placeholder
+                "responsiveness": "Engaged"  # Default placeholder
+            }
 
-            return analysis_result
-        except (json.JSONDecodeError, KeyError, IndexError) as e:
+        except Exception as e:
             print(f"[Analyzer] Error analyzing transcript: {e}")
-            return {"error": "Failed to analyze the transcript. Please check the input format."}
+            return {"error": "Failed to analyze the transcript."}

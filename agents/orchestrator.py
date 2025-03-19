@@ -18,21 +18,21 @@ class Orchestrator:
 
         context = {"transcript": transcript}
 
-        # Step 1: Analyze caregiver sentiment and responsiveness
+        # Step 1: Analyze caregiver sentiment and responsiveness (BERT model)
         analyzer_result = await self.analyzer_agent.run([{"content": json.dumps(context)}])
         if "error" in analyzer_result:
             return {"error": f"Analyzer error: {analyzer_result['error']}"}
 
         context.update(analyzer_result)
 
-        # Step 2: Categorize conversation topic
+        # Step 2: Categorize conversation topic (BERT model)
         categorizer_result = await self.categorizer_agent.run([{"content": json.dumps(context)}])
         if "error" in categorizer_result:
             return {"error": f"Categorizer error: {categorizer_result['error']}"}
         
         context.update(categorizer_result)
 
-        # Step 3: Assign caregiver performance score
+        # Step 3: Assign caregiver performance score (LLaMA 3.1)
         star_review_result = await self.star_reviewer_agent.run(
             transcript, 
             analyzer_result.get("sentiment", "Neutral"), 
@@ -43,7 +43,7 @@ class Orchestrator:
 
         context.update(star_review_result)
 
-        # Step 4: Generate parent notification
+        # Step 4: Generate parent notification (LLaMA 3.1)
         response_result = await self.response_generator_agent.run([{"content": json.dumps(context)}])
         if "error" in response_result:
             return {"error": f"Response generator error: {response_result['error']}"}

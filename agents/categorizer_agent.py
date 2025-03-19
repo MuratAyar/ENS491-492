@@ -1,48 +1,69 @@
 from typing import Dict, Any
-from .base_agent import BaseAgent
+from transformers import pipeline, AutoModelForSequenceClassification, AutoTokenizer
+import torch
 import json
 
-class CategorizerAgent(BaseAgent):
+class CategorizerAgent:
     def __init__(self):
-        super().__init__(
-            name="Categorizer",
-            instructions="Categorize the given caregiver-child conversation into one or more of the categories: "
-                         "Nutrition, Early Learning, Health, Responsive Caregiving, and Safety & Security. "
-                         "Return JSON output with primary and secondary categories."
+        self.name = "Categorizer"
+        self.instructions = "Categorize caregiver-child conversation into caregiving topics."
+        
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        # Load model with FP16 precision for lower VRAM usage
+        self.model_name = "facebook/bart-large-mnli"
+
+        # Load tokenizer and model separately to apply FP16 optimization
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name).to(self.device, dtype=torch.float16)
+
+        # Define caregiving categories
+        self.categories = [
+            "Nutrition",
+            "Early Learning",
+            "Health",
+            "Responsive Caregiving",
+            "Safety & Security"
+        ]
+
+        # Create the classification pipeline manually with optimizations
+        self.classification_pipeline = pipeline(
+            "zero-shot-classification",
+            model=self.model,
+            tokenizer=self.tokenizer,
+            device=0 if self.device == "cuda" else -1
         )
 
     async def run(self, messages: list) -> Dict[str, Any]:
-        """Categorize the conversation"""
         print("[Categorizer] Categorizing transcript")
-
         try:
             transcript_data = json.loads(messages[-1]["content"])
             transcript = transcript_data.get("transcript", "")
+
             if not transcript:
                 return {"error": "No transcript content found for categorization."}
 
-            # Create categorization prompt
-            prompt = (
-                f"Analyze the following caregiver-child conversation:\n\n{transcript}\n\n"
-                "Determine the primary caregiving category:\n"
-                "- Nutrition\n"
-                "- Early Learning\n"
-                "- Health\n"
-                "- Responsive Caregiving\n"
-                "- Safety & Security\n\n"
-                "If the conversation contains multiple caregiving aspects, list secondary categories as well.\n\n"
-                "Return the output in JSON format as:\n"
-                '{ "primary_category": "<Category>", '
-                '"secondary_categories": ["<Category1>", "<Category2>"] }'
-            )
+            # Limit input size to prevent memory overflow
+            transcript = transcript[:256]  # Reducing token size
 
-            categorization_result = self._query_ollama(prompt)
-            print(f"[Categorizer] Categorization result: {categorization_result}")
+            # Run caregiving category classification
+            classification_result = self.classification_pipeline(transcript, candidate_labels=self.categories)
 
-            if "error" in categorization_result:
-                return {"error": categorization_result["error"]}
+            # Assign primary and secondary categories
+            primary_category = classification_result["labels"][0]
+            secondary_categories = classification_result["labels"][1:3]  # Top 2 secondary categories
 
-            return categorization_result
-        except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
+            return {
+                "primary_category": primary_category,
+                "secondary_categories": secondary_categories
+            }
+        except torch.cuda.OutOfMemoryError:
+            print("[Categorizer] CUDA Out of Memory! Switching to CPU...")
+            self.device = "cpu"
+            self.model.to(self.device)  # Move model to CPU if GPU runs out of memory
+
+            return {"error": "CUDA memory issue. Switched to CPU processing."}
+
+        except Exception as e:
             print(f"[Categorizer] Error categorizing transcript: {e}")
-            return {"error": "Failed to categorize the transcript. Please check the input format."}
+            return {"error": "Failed to categorize the transcript."}

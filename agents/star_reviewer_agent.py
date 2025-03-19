@@ -30,12 +30,19 @@ class StarReviewerAgent(BaseAgent):
             )
 
             response = self._query_ollama(prompt)
+
+            # Ensure JSON format is extracted before returning
+            if isinstance(response, str):
+                response = self._extract_json(response)
+
             print(f"[CaregiverScorer] Caregiver score result: {response}")
 
             if "error" in response:
                 return {"error": response["error"]}
 
             return response
+
+
         except (json.JSONDecodeError, ValueError) as e:
             print(f"[CaregiverScorer] Error processing response: {e}")
             return {"error": "Failed to evaluate caregiver performance."}

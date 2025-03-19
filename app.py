@@ -3,6 +3,10 @@ import asyncio
 import base64
 import pandas as pd
 from agents.orchestrator import Orchestrator
+import nest_asyncio  # Fixes asyncio issues with Streamlit
+
+# Apply nest_asyncio to fix event loop conflicts
+nest_asyncio.apply()
 
 # Initialize the orchestrator
 orchestrator = Orchestrator()
@@ -144,7 +148,10 @@ elif navigation_options[choice] == "analyze":
     if st.button("Analyze Transcript"):
         if transcript_text.strip():
             with st.spinner("Analyzing... Please wait."):
-                result = asyncio.run(orchestrator.process_transcript(transcript_text))
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                result = loop.run_until_complete(orchestrator.process_transcript(transcript_text))
+                
                 if result:
                     st.subheader("Caregiver Performance Report")
                     df_metrics = pd.DataFrame({
@@ -193,7 +200,10 @@ elif navigation_options[choice] == "upload":
     if uploaded_file:
         transcript_text = uploaded_file.read().decode("utf-8")
         with st.spinner("Analyzing uploaded transcript..."):
-            result = asyncio.run(orchestrator.process_transcript(transcript_text))
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(orchestrator.process_transcript(transcript_text))
+
             if result:
                 st.subheader("Caregiver Performance Report")
                 df_metrics = pd.DataFrame({
