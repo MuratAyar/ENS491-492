@@ -16,7 +16,8 @@ class CategorizerAgent:
         # Load tokenizer and model separately to apply FP16 optimization
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name).to(self.device, dtype=torch.float16)
-
+        self.model = self.model.half()
+        
         # Define caregiving categories
         self.categories = [
             "Nutrition",
