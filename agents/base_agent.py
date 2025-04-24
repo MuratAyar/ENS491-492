@@ -1,45 +1,49 @@
 import json
-from openai import OpenAI
+import requests
 
 class BaseAgent:
     def __init__(self, name: str, instructions: str):
         self.name = name
         self.instructions = instructions
-        self.ollama_client = OpenAI(
-            base_url="http://localhost:11434/v1",
-            api_key="ollama",
-        )
+        self.base_url = "http://localhost:11434/v1"
+        self.api_key = "ollama"  # Or your actual API key
 
-    async def run(self, messages: list):
-        raise NotImplementedError("Subclass must implement run()")
-    
     def _query_ollama(self, prompt: str) -> dict:
         """Query Ollama model and extract valid JSON output."""
         try:
             print(f"[{self.name}] Querying Ollama with prompt: {prompt}")
-            response = self.ollama_client.chat.completions.create(
-                model="llama3.1",
-                messages=[
+            url = f"{self.base_url}/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "llama3.2:3b-instruct-q4_K_S",
+                "messages": [
                     {"role": "system", "content": self.instructions},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.7,
-                max_tokens=2000,
-            )
-            
-            # Extract content and clean JSON
-            content = response.choices[0].message.content.strip()
-            extracted_json = self._extract_json(content)
+                "temperature": 0.7,
+                "max_tokens": 256,
+            }
 
-            return extracted_json
+            response = requests.post(url, headers=headers, json=data)
+
+            if response.status_code == 200:
+                content = response.json()['choices'][0]['message']['content'].strip()
+                extracted_json = self._extract_json(content)
+                return extracted_json
+            else:
+                print(f"[{self.name}] Error: {response.status_code} - {response.text}")
+                return {"error": f"HTTP Error {response.status_code}"}
+
         except Exception as e:
             print(f"[{self.name}] Error querying Ollama: {str(e)}")
             return {"error": str(e)}
 
     def _extract_json(self, text: str) -> dict:
-        """Extracts valid JSON from a given text output by removing markdown artifacts."""
+        """Extract valid JSON from a given text output by removing markdown artifacts."""
         try:
-            # Handle Markdown-style JSON code blocks
             if "```json" in text:
                 start = text.find("```json") + len("```json")
                 end = text.find("```", start)
@@ -49,12 +53,8 @@ class BaseAgent:
                 end = text.find("```", start)
                 text = text[start:end].strip()
 
-            # Convert text to JSON
             return json.loads(text)
         except json.JSONDecodeError:
-            # If parsing fails, return error
             return {"error": "Failed to parse JSON from LLM response"}
         except Exception as e:
-            # General error handling
-            return {"error": str(e)}
-
+            return {"error": f"Unexpected error: {str(e)}"}
