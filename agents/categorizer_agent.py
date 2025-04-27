@@ -2,23 +2,29 @@ from typing import Dict, Any
 from transformers import pipeline, AutoModelForSequenceClassification, AutoTokenizer
 import torch
 import json
+import logging
+
+logger = logging.getLogger("care_monitor")  # global project logger
 
 class CategorizerAgent:
     def __init__(self):
         self.name = "Categorizer"
         self.instructions = "Categorize caregiver-child conversation into caregiving topics."
-        
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
-        # Load model with FP16 precision for lower VRAM usage
         self.model_name = "facebook/bart-large-mnli"
 
-        # Load tokenizer and model separately to apply FP16 optimization
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name).to(self.device, dtype=torch.float16)
-        self.model = self.model.half()
-        
-        # Define caregiving categories
+        try:
+            if self.device == "cuda":
+                self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name).to(self.device, dtype=torch.float16)
+                self.model = self.model.half()
+            else:
+                self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name).to(self.device)
+        except Exception as e:
+            logger.exception("[Categorizer] Model load error, loading on CPU fallback")  # ✨ changed
+            self.device = "cpu"
+            self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name).to("cpu")
+
         self.categories = [
             "Nutrition",
             "Early Learning",
@@ -26,8 +32,6 @@ class CategorizerAgent:
             "Responsive Caregiving",
             "Safety & Security"
         ]
-
-        # Create the classification pipeline manually with optimizations
         self.classification_pipeline = pipeline(
             "zero-shot-classification",
             model=self.model,
@@ -36,35 +40,31 @@ class CategorizerAgent:
         )
 
     async def run(self, messages: list) -> Dict[str, Any]:
-        print("[Categorizer] Categorizing transcript")
+        logger.debug("[Categorizer] Categorizing transcript")  # ✨ use logger instead of print
         try:
-            transcript_data = json.loads(messages[-1]["content"])
-            transcript = transcript_data.get("transcript", "")
-
+            data = json.loads(messages[-1]["content"])
+            transcript = data.get("transcript", "")
             if not transcript:
-                return {"error": "No transcript content found for categorization."}
+                return {"error": "No transcript content for categorization."}
 
-            # Limit input size to prevent memory overflow
-            transcript = transcript[:256]  # Reducing token size
-
-            # Run caregiving category classification
-            classification_result = self.classification_pipeline(transcript, candidate_labels=self.categories)
-
-            # Assign primary and secondary categories
-            primary_category = classification_result["labels"][0]
-            secondary_categories = classification_result["labels"][1:3]  # Top 2 secondary categories
-
+            text_snippet = transcript[:256]
+            result = self.classification_pipeline(text_snippet, candidate_labels=self.categories)
+            primary_category = result["labels"][0] if "labels" in result else "General"
+            secondary_categories = result["labels"][1:3] if "labels" in result else []
             return {
                 "primary_category": primary_category,
                 "secondary_categories": secondary_categories
             }
-        except torch.cuda.OutOfMemoryError:
-            print("[Categorizer] CUDA Out of Memory! Switching to CPU...")
-            self.device = "cpu"
-            self.model.to(self.device)  # Move model to CPU if GPU runs out of memory
 
-            return {"error": "CUDA memory issue. Switched to CPU processing."}
+        except torch.cuda.OutOfMemoryError:
+            logger.exception("[Categorizer] CUDA Out of Memory! Switching to CPU...")  # ✨ changed
+            self.device = "cpu"
+            try:
+                self.model.to("cpu")
+            except Exception as e:
+                logger.exception("[Categorizer] Failed to move model to CPU")  # ✨ changed
+            return {"error": "Memory issue: switched to CPU. Please retry."}
 
         except Exception as e:
-            print(f"[Categorizer] Error categorizing transcript: {e}")
+            logger.exception("[Categorizer] Failed to categorize")  # ✨ changed
             return {"error": "Failed to categorize the transcript."}

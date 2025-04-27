@@ -1,48 +1,39 @@
 from typing import Dict, Any
 from .base_agent import BaseAgent
-import json
 
 class StarReviewerAgent(BaseAgent):
+    """Agent that provides a holistic caregiver performance rating."""
+
     def __init__(self):
         super().__init__(
             name="CaregiverScorer",
-            instructions="Evaluate the caregiver's performance in the given conversation. "
-                         "Assign a score from 1 to 5 based on empathy, responsiveness, and engagement. "
-                         "Return JSON output with a score and justification."
+            instructions=(
+                "You are a caregiving expert evaluating a caregiver's performance in a conversation with a child."
+                " Always respond with a JSON object containing the requested fields."
+            ),
+            model="qwen:7b"
         )
 
     async def run(self, transcript: str, sentiment: str, responsiveness: str) -> Dict[str, Any]:
-        """Assign an overall caregiver rating"""
-        print("[CaregiverScorer] Evaluating caregiver performance")
-
-        try:
-            # Create caregiver scoring prompt
-            prompt = (
-                f"Based on the following caregiver-child conversation:\n\n{transcript}\n\n"
-                f"Sentiment: {sentiment}\n"
-                f"Responsiveness: {responsiveness}\n\n"
-                "Assign a caregiver score from 1 to 5:\n"
-                "- 5: Highly empathetic, responsive, and engaged.\n"
-                "- 3-4: Neutral interactions, average responsiveness.\n"
-                "- 1-2: Harsh, dismissive, or passive caregiving.\n\n"
-                "Return the output in JSON format as:\n"
-                '{ "caregiver_score": <1-5>, "justification": "<reasoning>" }'
-            )
-
-            response = self._query_ollama(prompt)
-
-            # Ensure JSON format is extracted before returning
-            if isinstance(response, str):
-                response = self._extract_json(response)
-
-            print(f"[CaregiverScorer] Caregiver score result: {response}")
-
-            if "error" in response:
-                return {"error": response["error"]}
-
-            return response
-
-
-        except (json.JSONDecodeError, ValueError) as e:
-            print(f"[CaregiverScorer] Error processing response: {e}")
-            return {"error": "Failed to evaluate caregiver performance."}
+        prompt = (
+            "Given the following caregiver-child conversation, evaluate the caregiver's performance.\n\n"
+            f"Conversation:\n{transcript}\n\n"
+            f"Known context: Sentiment = {sentiment}; Responsiveness = {responsiveness}.\n\n"
+            "Assess the caregiver on empathy, responsiveness, and engagement. Provide:\n"
+            "- caregiver_score: an overall performance score (1-5)\n"
+            "- tone: overall tone of the caregiver (e.g., Calm, Neutral, Harsh)\n"
+            "- empathy: level of empathy shown (Low, Moderate, High)\n"
+            "- responsiveness: level of responsiveness (Low, Moderate, High)\n"
+            "- justification: a brief explanation for the above ratings\n\n"
+            "Output in JSON format with keys: caregiver_score, tone, empathy, responsiveness, justification."
+        )
+        res = self._query_ollama(prompt)
+        if isinstance(res, dict) and "error" in res:
+            return {
+                "caregiver_score": "0",
+                "tone": "Unknown",
+                "empathy": "Unknown",
+                "responsiveness": "Unknown",
+                "justification": res["error"][:120],
+            }
+        return res

@@ -1,0 +1,23 @@
+(15:00) Child: I'm hungry. Can I have a snack?
+(15:01) Caregiver: Sure, I'll get you something to eat.
+(15:03) Child: Thank you.
+(15:04) Caregiver: Would you like an apple or a banana?
+(15:06) Child: An apple, please.
+(15:07) Caregiver: Alright, I'll get you an apple.
+(15:10) Child: Can we go to the park later?
+(15:11) Caregiver: We'll consider that after your snack.
+(15:13) Child: Okay.
+(15:15) Caregiver: Did you finish your homework?
+(15:16) Child: Yes, I completed it.
+(15:18) Caregiver: Good. After your snack, you can read a book.
+(15:20) Child: That sounds fine.
+(15:21) Caregiver: Let me know if you need any help.
+(15:23) Child: Will do.
+(15:25) Caregiver: We'll have dinner at 6:00 PM.
+(15:26) Child: Alright, thanks.
+(15:28) Caregiver: Do you need help with any chores?
+(15:29) Child: No, I'm fine.
+(15:30) Caregiver: Okay, then enjoy your snack.
+(15:31) Child: I will. Thank you.
+(15:33) Caregiver: We'll discuss your day later.
+(15:35) Child: Sure.

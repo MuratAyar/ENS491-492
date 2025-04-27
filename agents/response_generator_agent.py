@@ -1,98 +1,136 @@
 from typing import Dict, Any
-from .base_agent import BaseAgent
 import json
 
-# Updated imports from the community packages:
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OllamaEmbeddings
-
-# Import the persistent Chroma client from chromadb
+from langchain_chroma import Chroma
+from langchain_ollama import OllamaEmbeddings
 from chromadb import PersistentClient
 from chromadb.config import Settings
 
+from .base_agent import BaseAgent
+
+import logging
+
+logger = logging.getLogger("care_monitor")  # global project logger
+
+
 class ResponseGeneratorAgent(BaseAgent):
-    def __init__(self):
+    """Generate a parent-friendly summary plus improvement suggestions."""
+
+    def __init__(self) -> None:
         super().__init__(
             name="ParentNotifier",
             instructions=(
-                "Generate a caregiver interaction summary for parents. "
-                "Highlight positive caregiving aspects and potential concerns. "
-                "Provide clear, structured feedback in JSON format."
-            )
+                "You are a caregiving expert. ALWAYS return STRICT JSON with:\n"
+                "{ parent_notification: string, recommendations: list of {category, description} }\n"
+                "Example:\n"
+                "{\n"
+                "\"parent_notification\": \"The caregiver was empathetic and responsive.\",\n"
+                "\"recommendations\": [\n"
+                "  {\"category\": \"Nutrition\", \"description\": \"Offer more food variety.\"},\n"
+                "  {\"category\": \"Emotional Support\", \"description\": \"Praise the child's achievements.\"}\n"
+                "]\n"
+                "}"
+            ),
+            model="qwen:7b",
         )
 
-        # Initialize the persistent Chroma client with new settings:
-        # Using a folder "embeddings/chroma_index" to store data persistently.
-        # The `allow_reset` flag enables the reset() method.
         self.vector_store = PersistentClient(
             path="embeddings/chroma_index",
-            settings=Settings(
-                allow_reset=True,
-            )
+            settings=Settings(allow_reset=True),
         )
-
-        # Initialize the embedding function from langchain_community
         embedding_function = OllamaEmbeddings(model="llama3.1")
-
-        # Create the Chroma-based retriever using the persistent vector store
         self.retriever = Chroma(
             client=self.vector_store,
-            embedding_function=embedding_function
+            embedding_function=embedding_function,
         )
 
     async def run(self, messages: list) -> Dict[str, Any]:
-        """Generate a summary notification for parents."""
-        print("[ParentNotifier] Generating caregiver performance summary")
+        print("[ParentNotifier] Generating caregiver performance summary...")
         try:
-            transcript_data = json.loads(messages[-1]["content"])
-            transcript = transcript_data.get("transcript", "")
-            sentiment = transcript_data.get("sentiment", "Neutral")
-            category = transcript_data.get("primary_category", "General")
-            caregiver_score = transcript_data.get("caregiver_score", 3)
-            feedback = transcript_data.get("feedback", "")
-
+            context = json.loads(messages[-1]["content"])
+            transcript = context.get("transcript", "")
             if not transcript:
-                return {"error": "No transcript content found for generating a response."}
+                return {"error": "No transcript provided."}
 
-            # Retrieve caregiving best practices related to category
+            sentiment = context.get("sentiment", "Neutral")
+            category = context.get("primary_category", "General")
+            caregiver_score = context.get("caregiver_score", 3)
+            feedback = context.get("feedback", "")
+
             context_docs = self.retriever.similarity_search(category, k=2)
-            context_text = "\n".join([doc.page_content for doc in context_docs])
+            context_text = "\n".join(doc.page_content for doc in context_docs)
 
-            # Create parent notification prompt
-            prompt = (
-                f"Generate a caregiver evaluation summary for parents based on this conversation:\n\n{transcript}\n\n"
-                f"Caregiver performance metrics:\n"
-                f"- Sentiment: {sentiment}\n"
-                f"- Category: {category}\n"
-                f"- Caregiver Score: {caregiver_score}/5\n\n"
-                f"Feedback:\n{feedback}\n\n"
-                f"Use caregiving best practices from:\n{context_text}\n\n"
-                "Provide a summary in JSON format as:\n"
-                '{ "parent_notification": "<brief, polite summary>", '
-                '"recommendations": ["suggestions for improvement, if needed"] }'
-            )
+            # ––– FEW-SHOT GUIDANCE –––
+            prompt = f"""
+You are a paediatric-care expert.
+Return STRICT JSON with keys:
+  parent_notification : str
+  recommendations     : list[{{category:str, description:str}}]
 
-            # Query the Ollama model (using inherited _query_ollama method)
-            response_result = self._query_ollama(prompt)
+### GOOD EXAMPLE
+Conversation:
+(10:00) Child: I’m hungry.
+(10:01) Caregiver: Sure – let’s grab an apple.
 
-            # Ensure JSON format is extracted before returning
-            if isinstance(response_result, str):
-                response_result = self._extract_json(response_result)
+JSON:
+{{
+ "parent_notification":"The caregiver reacted promptly and kindly to the child's need.",
+ "recommendations":[{{"category":"Nutrition","description":"Offer the child water too to keep them hydrated."}}]
+}}
 
-            # Fix recommendations if returned as a simple list
-            if isinstance(response_result.get("recommendations"), list):
-                response_result["recommendations"] = [
-                    {"category": "General", "description": rec} if isinstance(rec, str) else rec
-                    for rec in response_result["recommendations"]
+### BAD EXAMPLE
+Conversation:
+(11:00) Child: I'm hungry.
+(11:01) Caregiver: Stop whining. You'll eat when I say so.
+
+JSON:
+{{
+ "parent_notification":"The caregiver used harsh language and dismissed the child's basic need.",
+ "recommendations":[
+   {{"category":"Emotional Support","description":"Use calm words instead of insults."}},
+   {{"category":"Nutrition","description":"Offer a healthy snack without delay."}}
+ ]}}
+
+### ACTUAL CONVERSATION
+{transcript}
+
+Caregiver metrics:
+  Sentiment  : {sentiment}
+  Category   : {category}
+  Score      : {caregiver_score}/5
+  Feedback   : {feedback}
+
+Relevant best practices:
+{context_text}
+
+Respond with JSON only – no extra text.
+"""
+
+            raw = self._query_ollama(prompt)
+
+            if isinstance(raw, dict) and "error" in raw:
+                print(f"[ParentNotifier] LLM error response: {raw['error']}")
+                return {
+                    "parent_notification": "LLM error: " + raw["error"][:120],
+                    "recommendations": [],
+                }
+
+            if isinstance(raw, str):
+                parsed = self._extract_json(raw)
+            else:
+                parsed = raw
+
+            parsed.setdefault("parent_notification", "No note provided.")
+            parsed.setdefault("recommendations", [])
+
+            if parsed["recommendations"] and isinstance(parsed["recommendations"][0], str):
+                parsed["recommendations"] = [
+                    {"category": "General", "description": rec}
+                    for rec in parsed["recommendations"]
                 ]
 
-            print(f"[ParentNotifier] Parent notification result: {response_result}")
+            return parsed
 
-            if "error" in response_result:
-                return {"error": response_result["error"]}
-
-            return response_result
-
-        except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
-            print(f"[ParentNotifier] Error generating response: {e}")
-            return {"error": "Failed to generate parent notification."}
+        except Exception as e:
+           logger.exception("[ParentNotifier] Crashed") 
+           return {"error": f"Exception during parent note generation: {e}"}
