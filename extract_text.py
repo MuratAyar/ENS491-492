@@ -21,8 +21,13 @@ def create_index():
 
     # Explicitly specify LLM model for embeddings
     print("Creating embeddings for caregiver best practices...")
-    embeddings = OllamaEmbeddings(model="llama3.1")  # Ensure this model is available
-    vector_store = Chroma.from_documents(texts, embeddings)
+    embeddings = OllamaEmbeddings(model="openhermes:7b-mistral-v2.5-q5_1")  # Ensure this model is available
+    vector_store = Chroma.from_documents(
+        texts,
+        embeddings,
+        persist_directory=INDEX_DIR
+    )
+    vector_store.persist()
 
     # 🔹 Remove the incorrect persist line, since Chroma auto-persists now
     print("Chroma index created successfully!")

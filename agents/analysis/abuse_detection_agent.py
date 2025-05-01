@@ -1,6 +1,7 @@
 from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
 import torch, re, json, logging
 from typing import Dict, Any
+from agents.hf_cache import get_unbiased_toxic_roberta
 
 logger = logging.getLogger("care_monitor")
 
@@ -8,16 +9,13 @@ class AbuseDetectionAgent:
     """Sentence-level toxic / non-toxic flag using Unitary RoBERTa."""
 
     def __init__(self):
-        device = 0 if torch.cuda.is_available() else -1
-        model_name = "unitary/unbiased-toxic-roberta"
-        tok = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        tok, model = get_unbiased_toxic_roberta()
         self.pipe = pipeline(
             "text-classification",
             model=model,
             tokenizer=tok,
-            device=device,
-            top_k=None,            # we want all scores (label order is stable)
+            device=0 if torch.cuda.is_available() else -1,
+            top_k=None,
             truncation=True,
             max_length=256,
         )

@@ -13,7 +13,8 @@ logger = logging.getLogger("care_monitor")     # global project logger
 
 class BaseAgent:
     # ──────────────────────────────────────────────────────────────
-    def __init__(self, name: str, instructions: str, model: str = "qwen:7b"):
+    def __init__(self, name: str, instructions: str, 
+                 model: str = "openhermes:7b-mistral-v2.5-q5_1"):
         self.name = name
         self.instructions = instructions
         self.model = model

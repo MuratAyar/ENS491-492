@@ -3,6 +3,7 @@ from transformers import pipeline
 import torch
 import json
 import logging
+from agents.hf_cache import get_sentiment_pipe, get_toxicity_pipe
 
 logger = logging.getLogger("care_monitor")
 
@@ -12,20 +13,9 @@ class AnalyzerAgent:
         self.instructions = "Analyze caregiver-child interaction transcript."
         device_name = "cuda" if torch.cuda.is_available() else "cpu"
         # Load sentiment analysis pipeline (CardiffNLP TweetRoBERTa)
-        self.sentiment_pipeline = pipeline(
-            "text-classification",
-            model="cardiffnlp/twitter-roberta-base-sentiment",
-            tokenizer="cardiffnlp/twitter-roberta-base-sentiment",
-            device=0 if device_name == "cuda" else -1
-        )
+        self.sentiment_pipeline = get_sentiment_pipe()
         # Load toxicity detection pipeline (Toxic-BERT)
-        self.toxicity_pipeline = pipeline(
-            "text-classification",
-            model="unitary/toxic-bert",
-            tokenizer="unitary/toxic-bert",
-            device=0 if device_name == "cuda" else -1,
-            return_all_scores=True
-        )
+        self.toxicity_pipeline = get_toxicity_pipe()
 
     async def run(self, messages: list) -> Dict[str, Any]:
         print("[Analyzer] Conducting sentiment and toxicity analysis")
@@ -39,13 +29,13 @@ class AnalyzerAgent:
             text_sample = conversation[:1000]
 
             # Sentiment analysis (Negative/Neutral/Positive)
-            sentiment_result = self.sentiment_pipeline(text_sample)
+            sentiment_result = self.sentiment_pipeline(text_sample)[0]
             label_map = {
                 "LABEL_0": "Negative",
                 "LABEL_1": "Neutral",
                 "LABEL_2": "Positive"
             }
-            sentiment_label = label_map.get(sentiment_result[0]["label"], "Neutral")
+            sentiment_label = label_map.get(sentiment_result["label"], "Neutral")
 
             # Toxicity analysis (multi-label classification)
             toxic_results = self.toxicity_pipeline(text_sample)[0]

@@ -1,6 +1,6 @@
 import dearpygui.dearpygui as dpg
 import asyncio
-from agents.orchestrator import Orchestrator
+from agents.orchestration.orchestrator import Orchestrator
 
 # Initialize UI
 dpg.create_context()

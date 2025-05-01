@@ -2,7 +2,7 @@
 
 import json
 from typing import Any, Dict, List
-from .base_agent import BaseAgent
+from ..llm.base_agent import BaseAgent
 
 class LLMEvaluatorAgent(BaseAgent):
     """
