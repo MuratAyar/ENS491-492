@@ -1,92 +1,142 @@
-from typing import Dict, Any
-import json
+# agents/llm/response_generator_agent.py
+import json, logging
+from typing import Dict, Any, List
 
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OllamaEmbeddings
 from chromadb import PersistentClient
-from chromadb.config import Settings
+from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
+from langchain_community.embeddings import OllamaEmbeddings
 
 from .base_agent import BaseAgent
 
-import logging
-logger = logging.getLogger("care_monitor")  # global project logger
+logger = logging.getLogger("care_monitor")
 
+IMPORTANT_CATEGORIES = {
+    "Nutrition", "Health", "Safety & Security", "Medication",
+    "Crying", "Accident", "Sleep", "Screen Time"
+}
 
 class ResponseGeneratorAgent(BaseAgent):
-    """Generate a parent-friendly summary plus improvement suggestions."""
+    """
+    Decides if a parent-notification is warranted; if yes, generates it.
+    """
 
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__(
             name="ParentNotifier",
             instructions=(
-                "You are a paediatric caregiving expert. "
-                "Given the analysis context, write an empathetic parent-notification and "
-                "2-3 actionable recommendations. "
-                "ALWAYS return STRICT JSON with the keys:\n"
-                "{ parent_notification:str, recommendations:List[{category:str, description:str}] }"
+                "You are an expert paediatric caregiver assistant.\n"
+                "First decide whether parents need a push-notification.\n"
+                "If NOT, return:\n"
+                '{ "send_notification": false }\n'
+                "If YES, write a warm parent_notification paragraph and up to 3 "
+                "actionable recommendations (category + 1-sentence). "
+                "Return STRICT JSON with keys:\n"
+                '{ "send_notification": true, '
+                '"parent_notification": str, '
+                '"recommendations": [ { "category": str, "description": str } ] }'
             )
         )
 
-        self.vector_store = PersistentClient(
-            path="embeddings/chroma_index",
-            settings=Settings(allow_reset=True),
-        )
-        embedding_function = OllamaEmbeddings(model="openhermes:7b-mistral-v2.5-q5_1")
+        # optional best-practice retrieval (same as önceki kod)
+        #client = PersistentClient(path="embeddings/chroma_index", settings=Settings(allow_reset=True))
         self.retriever = Chroma(
-            client=self.vector_store,
-            embedding_function=embedding_function,
+            embedding_function=OllamaEmbeddings(model="openhermes:7b-mistral-v2.5-q5_1"),
+            persist_directory="embeddings/chroma_index",  # ✅ Sadece bu yeterli
         )
 
-    async def run(self, messages: list) -> Dict[str, Any]:
-        print("[ParentNotifier] Generating caregiver performance summary...")
+    # ------------------------------------------------------------------ #
+    async def run(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         try:
-            context = json.loads(messages[-1]["content"])
-            transcript = context.get("transcript", "")
-            if not transcript:
-                return {"error": "No transcript provided."}
+            ctx = json.loads(messages[-1]["content"])
 
-            sentiment = context.get("sentiment", "Neutral")
-            category = context.get("primary_category", "General")
-            score5 = context.get("caregiver_score", 3)
+            # ---------------- Heuristik kararı ----------------
+            def should_notify(ctx):
+                cat = ctx.get("primary_category", "General")
+                tox = ctx.get("toxicity", 0.0)
+                sent = ctx.get("sentiment_score", 0.0)
+                sarcasm = ctx.get("sarcasm", 0.0)
+                cg_score = ctx.get("caregiver_score", 5)
 
-            context_docs = self.retriever.similarity_search(category, k=2)
-            best_practices = "\n".join(doc.page_content for doc in context_docs)
+                return any([
+                    cat in IMPORTANT_CATEGORIES,
+                    (tox > 0.35 and abs(sent) < 0.2),
+                    (sarcasm > 0.88 and sent < 0.2),
+                    (cg_score <= 5 and tox > 0.2),
+                ])
 
-            # ––– FEW-SHOT GUIDANCE –––
+            # Hiç gerek yoksa hemen çık
+            if not should_notify(ctx):
+                return {
+                    "send_notification": False,
+                    "parent_notification": "",
+                    "recommendations": []
+                }
+
+             # ---------------- LLM’e prompt --------------------
+            cat = ctx.get("primary_category", "General")
+            transcript = ctx.get("transcript", "")[:1200]
+            tox_scores = ctx.get("toxicity_scores", [])
+            sent_scores = ctx.get("sentiment_scores", [])
+            sarcasm_scores = ctx.get("sarcasm_scores", [])
+
+            # Averages
+            sent_avg = ctx.get("sentiment_score", 0.0)
+            tox_avg = ctx.get("toxicity", 0.0)
+            sarcasm_avg = ctx.get("sarcasm", 0.0)
+            caregiver_sc = ctx.get("caregiver_score", 5)
+
+            # best-practice snippet
+            best_docs = self.retriever.similarity_search(cat, k=2)
+            best_practices = "\n".join(d.page_content for d in best_docs)
+
             prompt = f"""
             ### TASK
-            Write an empathic note for the parents - one short paragraph.
-            Then give max 3 concise recommendations (category + 1 sentence).
+            Parents rely on concise, kind notifications. 1) Write ONE short paragraph
+            (parent_notification). 2) Provide up to 3 recommendations
+            (category + one sentence).
 
-            ### CAREGIVER METRICS
-            Sentiment : {sentiment}
-            Category  : {category}
-            Score (1-5): {score5}
+            ### CONTEXT METRICS
+            Category               : {cat}
+            Avg sentiment score    : {sent_avg:.3f}
+            Sentence sentiment[]   : {sent_scores}
+            Avg toxicity           : {tox_avg:.3f}
+            Toxicity per sentence[]: {tox_scores}
+            Avg sarcasm            : {sarcasm_avg:.3f}
+            Sarcasm per sent[]     : {sarcasm_scores}
+            Caregiver score (1-10) : {caregiver_sc}
 
-            ### CONVERSATION (truncated to 1000 chars)
-            {transcript[:1000]}
+            ### CONVERSATION (trimmed)
+            {transcript}
 
-            ### BEST PRACTICES (retrieved)
+            ### BEST PRACTICES
             {best_practices}
 
-            ### OUTPUT FORMAT (STRICT JSON)
-            {{"parent_notification": "...", "recommendations":[{{"category":"...","description":"..."}}]}}
+            ### STRICT OUTPUT JSON
+            {{"send_notification": true,
+            "parent_notification": "...",
+            "recommendations":[{{"category":"...","description":"..."}}]}}
             """
-
             raw = self._query_ollama(prompt)
             data = self._extract_json(raw if isinstance(raw, str) else json.dumps(raw))
 
-            # -- Çıktıyı normalize et --
-            data.setdefault("parent_notification", "No summary generated.")
-            recs = data.get("recommendations", [])
-            if isinstance(recs, str):  # tek string geldiyse listeye sar
+            recs: List[Any] = data.get("recommendations", [])
+            if isinstance(recs, dict):
+                recs = [recs]
+            elif isinstance(recs, str):
                 recs = [{"category": "General", "description": recs}]
+
             data["recommendations"] = [
-                {"category": r.get("category", "General"), "description": r.get("description", "")}
-                for r in recs
+                {"category": r.get("category", "General"),
+                 "description": r.get("description", "")[:140]}
+                for r in recs[:3]
             ]
+            data.setdefault("parent_notification", "")
             return data
 
         except Exception as exc:
-            logging.exception("[ParentNotifier] crashed")
-            return {"error": f"ParentNotifier exception: {exc}"}
+            logger.exception("[ParentNotifier] crashed")
+            return {"send_notification": False,
+                    "parent_notification": "",
+                    "recommendations": [],
+                    "error": str(exc)}

@@ -11,7 +11,6 @@ from agents.llm.star_reviewer_agent import StarReviewerAgent
 from agents.analysis.analyzer_agent import AnalyzerAgent
 from agents.analysis.categorizer_agent import CategorizerAgent
 from agents.analysis.toxicity_agent import ToxicityAgent
-from agents.analysis.abuse_detection_agent import AbuseDetectionAgent
 from agents.analysis.sarcasm_detection_agent import SarcasmDetectionAgent
 
 # Setup logger
@@ -27,7 +26,6 @@ class Orchestrator:
         self.star_reviewer_agent = StarReviewerAgent()
         self.response_generator_agent = ResponseGeneratorAgent()
         self.tox_agent = ToxicityAgent()
-        self.abuse_agent = AbuseDetectionAgent()
         self.sarcasm_agent= SarcasmDetectionAgent()
 
     # ------------------------------------------------------------------
@@ -98,14 +96,10 @@ class Orchestrator:
             sentiment      = ctx.get("sentiment", "Neutral")
             tox_score      = ctx.get("toxicity", 0.0)          # 0-1 float
             sarcasm        = ctx.get("sarcasm", 0.0)
-            need_abuse     = tox_score >= 0.60
 
             # 5. Caregiver scoring (empathy, responsiveness, engagement)
-            scoring_result = await self.star_reviewer_agent.run(
-                transcript_to_analyze,
-                ctx.get("sentiment", "Neutral"),
-                ctx.get("responsiveness", "Passive")
-            )
+            scoring_result = await self.star_reviewer_agent.run(ctx)
+
             logger.debug(f"[Orchestrator] StarReviewerAgent → {scoring_result}")
             if isinstance(scoring_result, dict) and "error" in scoring_result:
                 return scoring_result
@@ -120,19 +114,11 @@ class Orchestrator:
             tasks = [
                 self.response_generator_agent.run([{"content": json.dumps(ctx)}]),
             ]
-            if need_abuse:
-                tasks.append(self.abuse_agent.run([{"content": json.dumps(ctx)}]))
-            else:
-                tasks.append(None)
 
-            response_result, abuse_line = await asyncio.gather(
-                *[t for t in tasks if t]            # filter out the Nones
-            )
+            response_result, = await asyncio.gather(*tasks)
 
             logger.debug(f"[Orchestrator] ResponseGeneratorAgent → {response_result}")
-            logger.debug(f"[Orchestrator] AbuseDetectionAgent → {abuse_line}")
             if response_result: ctx.update(response_result)
-            if abuse_line: ctx.update(abuse_line)
 
             # 11. Global abuse flag
             ctx["abuse_flag"] = bool(ctx.get("abusive", False) or ctx.get("toxicity", False))

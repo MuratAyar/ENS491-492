@@ -1,0 +1,39 @@
+{
+  "transcript": "[10:30] Child: I drew a picture of our house.  \n[10:32] Caregiver: You used so many colors. I like how you added the garden.  \n[10:35] Child: The flowers are for you.  \n[10:37] Caregiver: That is very thoughtful. Let us hang it on the fridge.  \n[10:40] Child: Can we draw more later.  \n[10:42] Caregiver: Yes. After lunch we will use the big paper and crayons.",
+  "toxicity_scores": [
+    0.001,
+    0.001,
+    0.001
+  ],
+  "toxicity": 0.001,
+  "abuse_flag": false,
+  "sentiment": "Positive",
+  "sentiment_score": 0.446,
+  "sentiment_scores": [
+    0.0,
+    0.953,
+    0.782,
+    0.943,
+    0.0,
+    0.0
+  ],
+  "tone": 9,
+  "empathy": 8,
+  "responsiveness": 9,
+  "primary_category": "Family",
+  "secondary_categories": [
+    "Emotional Support",
+    "Encouragement"
+  ],
+  "sarcasm": 0.195,
+  "sarcasm_scores": [
+    0.195,
+    0.132,
+    0.148
+  ],
+  "caregiver_score": 8,
+  "justification": "The caregiver shows a positive and supportive attitude towards the child's artwork. They acknowledge the effort put into it and make plans to engage in similar activities later.",
+  "send_notification": false,
+  "parent_notification": "",
+  "recommendations": []
+}

@@ -1,0 +1,56 @@
+{
+  "transcript": "[00:01] Child: Mom, I drew a dinosaur on the living-room wall!\n[00:04] Caregiver: Oh, perfect—because that’s exactly where priceless art belongs, right?\n[00:07] Child: Do you like it?\n[00:09] Caregiver: Absolutely, the Louvre is going to beg to borrow our wall now.\n[00:12] Child: Really?\n[00:14] Caregiver: You are so dumb!\n[00:18] Child: Should I clean it?\n[00:20] Caregiver: Fuck you",
+  "toxicity_scores": [
+    0.003,
+    0.042,
+    0.982,
+    0.998
+  ],
+  "toxicity": 0.998,
+  "abuse_flag": true,
+  "sentiment": "Neutral",
+  "sentiment_score": -0.127,
+  "sentiment_scores": [
+    0.523,
+    0.894,
+    0.0,
+    -0.527,
+    0.0,
+    -0.962,
+    0.0,
+    -0.946
+  ],
+  "tone": 4,
+  "empathy": 3,
+  "responsiveness": 5,
+  "primary_category": "Caregiver Stress",
+  "secondary_categories": [
+    "Family",
+    "Instruction"
+  ],
+  "sarcasm": 0.749,
+  "sarcasm_scores": [
+    0.749,
+    0.629,
+    0.3,
+    0.3
+  ],
+  "caregiver_score": 2,
+  "justification": "The caregiver's score is low due to their negative tone and lack of empathy in responding to the child. They show some responsiveness by asking the child to clean it but use harsh language.",
+  "send_notification": true,
+  "parent_notification": "It seems like your child has drawn on the living-room wall. Please guide them to clean it up and remind them about appropriate places for drawing. Take a deep breath and remember that everyone makes mistakes - including ourselves as caregivers.",
+  "recommendations": [
+    {
+      "category": "Caregiver Stress",
+      "description": "Engage in relaxation techniques, such as mindfulness or yoga, to help manage stress."
+    },
+    {
+      "category": "Communication with Children",
+      "description": "Use positive reinforcement and teach your child about appropriate places for drawing and other activities."
+    },
+    {
+      "category": "Encouraging Creativity",
+      "description": "Provide your child with age-appropriate art supplies and a designated space to express their creativity."
+    }
+  ]
+}

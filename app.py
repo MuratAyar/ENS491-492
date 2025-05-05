@@ -14,6 +14,10 @@ from streamlit_lottie import st_lottie
 
 from evidently import Dataset, DataDefinition
 
+from pathlib import Path
+import uuid, datetime
+import re
+
 # ‑‑‑ Streamlit page config ────────────────────────────────────────────────
 st.set_page_config(page_title="Caregiver‑Child Monitor", page_icon=":baby:", layout="wide")
 
@@ -47,6 +51,10 @@ if "last_ctx" not in st.session_state:
     st.session_state.last_ctx = None
 if "show_toxicity" not in st.session_state:
     st.session_state.show_toxicity = False
+if "show_sentiment" not in st.session_state:
+    st.session_state.show_sentiment = False
+if "show_sarcasm" not in st.session_state:
+    st.session_state.show_sarcasm = False
 if "show_eval" not in st.session_state:
     st.session_state.show_eval = False
 if "current_page" not in st.session_state:
@@ -92,6 +100,18 @@ def _metric(col, label: str, value: str):
         </div>""",
         unsafe_allow_html=True,
     )
+
+def extract_caregiver_lines(transcript: str) -> list:
+    caregiver_tags = ("Caregiver:", "Woman:", "Mother:", "Dad:", "Mum:")
+    lines = []
+    for line in transcript.splitlines():
+        if any(tag in line for tag in caregiver_tags):
+            clean = re.sub(r"^\s*\[\d{1,2}:\d{2}\]\s*", "", line)
+            text = clean.split(":", 1)[-1].strip()
+            lines.append(text)
+    return lines
+
+
 
 # =============================================================================
 #                               Sidebar Nav
@@ -148,17 +168,22 @@ elif page == "Analyze":
         st.session_state.transcript_history = ""
         st.session_state.last_ctx = None
         st.session_state.show_toxicity = False
+        st.session_state.show_sentiment = False
+        st.session_state.show_sarcasm = False
         st.session_state.show_eval = False
         try:
             orch.response_generator_agent.vector_store.reset()
         except Exception:
             pass
         st.success("History cleared.")
+        st.rerun()
 
     # ── Analyze button ───────────────────────────────────────────────────────
     if col_a.button("Analyze") and txt.strip():
         st.session_state.transcript_history = txt.strip()
         st.session_state.show_toxicity = False
+        st.session_state.show_sentiment = False
+        st.session_state.show_sarcasm = False
         st.session_state.show_eval = False
 
         loop = asyncio.new_event_loop()
@@ -167,42 +192,57 @@ elif page == "Analyze":
 
         # ‑‑‑ FAST ANALYSIS ----------------------------------------------------
         with st.spinner("Computing quick results …"):
-            a_res, c_res, s_res = loop.run_until_complete(
+            t_res, a_res, c_res, s_res = loop.run_until_complete(
                 asyncio.gather(
+                    orch.tox_agent.run([{"content": json.dumps({"transcript": txt})}]),   # NEW
                     orch.analyzer_agent.run([{"content": json.dumps({"transcript": txt})}]),
                     orch.categorizer_agent.run([{"content": json.dumps({"transcript": txt})}]),
                     orch.sarcasm_agent.run([{"content": json.dumps({"transcript": txt})}]),
                 )
             )
+            ctx.update(t_res)      # NEW
             ctx.update(a_res)
             ctx.update(c_res)
             ctx.update(s_res)   
 
-            star_raw = loop.run_until_complete(
-                orch.star_reviewer_agent.run(
-                    txt.strip(),
-                    ctx.get("sentiment", "Neutral"),
-                    ctx.get("responsiveness", "Passive"),
-                )
-            )
-            star = json.loads(star_raw) if isinstance(star_raw, str) else star_raw
-            score5 = float(star.get("caregiver_score", 0))
-            star["caregiver_score"] = round((score5 / 5) * 10, 1)
-            star.setdefault("justification", "No justification returned.")
-            ctx.update(star)
+            
 
         # ‑‑‑ HEAVY ANALYSIS ---------------------------------------------------
+        
         with st.spinner("Running detailed insights …"):
+            star_raw = loop.run_until_complete(orch.star_reviewer_agent.run(ctx))
+            star = json.loads(star_raw) if isinstance(star_raw, str) else star_raw
+            ctx.update(star)
+
             heavy = loop.run_until_complete(
                 asyncio.gather(
                     orch.response_generator_agent.run([{"content": json.dumps(ctx)}]),
-                    orch.abuse_agent.run([{"content": json.dumps(ctx)}]),
                 )
             )
             loop.close()
             for res in heavy:
                 if isinstance(res, dict):
                     ctx.update(res)
+
+        # -- JSON EXPORT --------------------------------------------------------
+
+
+        def save_ctx_as_json(ctx: Dict[str, Any]) -> str:
+            """Save analysis context to a timestamped JSON file and return the path."""
+            out_dir = Path("data/analysis_results")
+            out_dir.mkdir(parents=True, exist_ok=True)
+            ts   = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+            uid  = uuid.uuid4().hex[:8]
+            file = out_dir / f"analysis_{ts}_{uid}.json"
+            with open(file, "w", encoding="utf-8") as f:
+                json.dump(ctx, f, indent=2, ensure_ascii=False)
+            logger.info(f"[App] Analysis saved → {file}")
+            return str(file)
+
+        # … ağır analiz bittikten ve ctx güncellendikten sonra:
+        json_path = save_ctx_as_json(ctx)
+        st.success(f"JSON output saved → {json_path}")
+        # -----------------------------------------------------------------------
 
         st.session_state.last_ctx = ctx
 
@@ -211,38 +251,69 @@ elif page == "Analyze":
         ctx = st.session_state.last_ctx
 
         # Top metrics ---------------------------------------------------------
-        c1, c2, c3, c4 = st.columns(4)
-        _metric(c1, "Sentiment", ctx.get("sentiment", "N/A"))
+        c1, c2, c3, c4, c5 = st.columns(5)
+        sent_val = ctx.get("sentiment_score", 0)
+        sent_css = "color:#e74c3c" if sent_val < -0.3 else "color:#27ae60" if sent_val > 0.3 else "color:#f1c40f"
+        _metric(c1, "Sentiment", f"<span style='{sent_css}'>{sent_val:.2f}</span>")
+
         _metric(c2, "Category", ctx.get("primary_category", "N/A"))
         _metric(c3, "Caregiver Score", f"{ctx.get('caregiver_score', 'N/A')}/10")
+
         sar = ctx.get("sarcasm", 0)
         sar_css = "color:#e74c3c" if sar >= .3 else "color:#27ae60"
         _metric(c4, "Sarcasm", f"<span style='{sar_css}'>{sar:.2f}</span>")
 
-        # Add sarcasm details section
-        if ctx.get("sarcasm_lines"):
-            with st.expander("🧂 Sarcasm Analysis Details"):
-                st.caption("Caregiver lines analyzed for sarcasm/irony")
-                for idx, entry in enumerate(ctx["sarcasm_lines"]):
-                    score = entry.get("prob_irony", 0.0)
-                    emoji = "🎭" if score >= 0.3 else "✅"
-                    color = "#e74c3c" if score >= 0.3 else "#27ae60"
-                    st.markdown(f"""
-                    <div style="padding:10px; border-left:4px solid {color}; margin:5px 0;">
-                        {emoji} <b>Line {idx+1}</b> (score: {score:.2f})<br>
-                        <span style="color:{color};">"{entry['text'][:80]}..."</span>
-                    </div>
-                    """, unsafe_allow_html=True)
+        tox = ctx.get("toxicity", 0)
+        tox_css = "color:#e74c3c" if tox >= .3 else "color:#27ae60"
+        _metric(c5, "Toxicity", f"<span style='{tox_css}'>{tox:.2f}</span>")
+
+        # Toggles just below metrics
+        t0, t1, t2 = st.columns(3)
+        if t0.button("💬 Show Sentiment Details"):
+            st.session_state.show_sentiment = not st.session_state.show_sentiment
+        if t1.button("📣 Show Toxicity Details"):
+            st.session_state.show_toxicity = not st.session_state.show_toxicity
+        if t2.button("🧂 Show Sarcasm Details"):
+            st.session_state.show_sarcasm = not st.session_state.get("show_sarcasm", False)
+
+        # Details: Sentiment
+        if st.session_state.show_sentiment and ctx.get("sentiment_scores"):
+            st.markdown("### Sentiment by Utterance (Child & Caregiver)")
+            lines = ctx["transcript"].splitlines()
+            scores = ctx["sentiment_scores"]
+            for i, (ln, score) in enumerate(zip(lines, scores), 1):
+                txt = ln.split(":",1)[-1].strip()
+                st.markdown(f"**{i}.** `{txt}`  →  **Sentiment Score:** `{score:.3f}`")
+
+        # Details: Toxicity
+        if st.session_state.show_toxicity and ctx.get("toxicity_scores"):
+            st.markdown("### Toxicity Scores by Caregiver Utterance")
+            lines = extract_caregiver_lines(ctx["transcript"])
+            scores = ctx["toxicity_scores"]
+            for i, (line, score) in enumerate(zip(lines, scores), 1):
+                st.markdown(f"**{i}.** `{line}`  →  **Toxicity:** `{score:.3f}`")
+
+        # Details: Sarcasm
+        if st.session_state.get("show_sarcasm") and ctx.get("sarcasm_scores"):
+            st.markdown("### Sarcasm Scores by Caregiver Utterance")
+            lines = extract_caregiver_lines(ctx["transcript"])
+            scores = ctx["sarcasm_scores"]
+            for i, (line, score) in enumerate(zip(lines, scores), 1):
+                st.markdown(f"**{i}.** `{line}`  →  **Sarcasm:** `{score:.3f}`")
 
         # Justification & Parent Notification --------------------------------
         st.markdown(
-            f"<div class='card'><h3>Justification</h3><p>{ctx.get('justification','N/A')}</p></div>",
+            f"<div class='card'><h3>Caregiver Score Justification</h3><p>{ctx.get('justification','N/A')}</p></div>",
             unsafe_allow_html=True,
         )
-        st.markdown(
-            f"<div class='card'><h3>Parent Notification</h3><p>{ctx.get('parent_notification','N/A')}</p></div>",
-            unsafe_allow_html=True,
-        )
+        note = ctx.get("parent_notification", "")
+        if ctx.get("send_notification"):
+            st.markdown(f"<div class='card'><h3>Parent Notification</h3><p>{note}</p></div>",
+                        unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='card'><h3>Parent Notification</h3><p>— none needed —</p></div>",
+                        unsafe_allow_html=True)
+        
 
         # Recommendations -----------------------------------------------------
         recs = ctx.get("recommendations", [])
@@ -256,14 +327,9 @@ elif page == "Analyze":
             st.markdown("<div class='card'><h3>Recommendations</h3><p>None.</p></div>", unsafe_allow_html=True)
 
         # Toggles -------------------------------------------------------------
-        t1, t2 = st.columns(2)
-        if t1.button("📣 Show Toxicity Details"):
-            st.session_state.show_toxicity = not st.session_state.show_toxicity
-        if t2.button("🔍 Evaluate Models"):
+        t_col = st.columns(1)[0]
+        if t_col.button("🔍 Evaluate Models"):
             st.session_state.show_eval = not st.session_state.show_eval
-
-        if st.session_state.show_toxicity:
-            st.info(f"Toxicity = **{ctx.get('toxicity',0):.3f}**, Abuse = {ctx.get('abuse_flag')}")
 
         # Evaluation section --------------------------------------------------
         if st.session_state.show_eval:

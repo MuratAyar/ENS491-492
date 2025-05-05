@@ -1,8 +1,5 @@
-import json
-import logging
-import re
+import json, re, logging
 from typing import Dict, Any, List
-
 from agents.hf_cache import get_sarcasm_pipe
 
 logger = logging.getLogger("care_monitor")
@@ -10,20 +7,13 @@ logger = logging.getLogger("care_monitor")
 
 class SarcasmDetectionAgent:
     """
-    Detects irony / sarcasm in caregiver utterances.
-
-    Strategy:
-        1. Extract caregiver lines.
-        2. Run the HF model on each line (top_k=None → both labels).
-        3. Keep the line with the highest P(irony).
+    Detect irony / sarcasm in caregiver utterances.
 
     Returns
     -------
     {
-      "sarcasm": 0-1 float               # max P(irony) seen
-      "sarcasm_lines": [                 # per-utterance details
-          {"text": "...", "prob_irony": 0.42, "prob_non_irony": 0.58}
-      ]
+      "sarcasm": float,              # max irony prob (0-1)
+      "sarcasm_scores": [float, ...] # per-caregiver line
     }
     """
 
@@ -33,55 +23,72 @@ class SarcasmDetectionAgent:
         self.pipe = get_sarcasm_pipe()
         self.max_chars = max_chars
 
+        id2label = getattr(self.pipe.model.config, "id2label",
+                           {0: "non_irony", 1: "irony"})
+        self.LBL_IRONY = next(
+            (v for v in id2label.values() if v.lower() == "irony"), "irony"
+        )
+
+    # --------------------------------------------------------
+    @staticmethod
+    def _preprocess(txt: str) -> str:
+        """CardiffNLP tweet-style normalisation."""
+        out = []
+        for tok in txt.split():
+            if tok.startswith("@") and len(tok) > 1:
+                tok = "@user"
+            elif tok.startswith("http"):
+                tok = "http"
+            out.append(tok)
+        return " ".join(out)
+
+    # --------------------------------------------------------
     async def run(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         try:
-            payload = messages[-1]["content"]
-            parsed = json.loads(payload)
-            raw = parsed.get("transcript", "")
+            raw_ctx = json.loads(messages[-1]["content"])
+            transcript = raw_ctx.get("transcript", "")
 
-            # 1️⃣ extract caregiver utterances
+            # 1) caregiver satırlarını çek
             care_lines: List[str] = []
-            for line in filter(None, raw.splitlines()):
+            for line in filter(None, transcript.splitlines()):
                 if any(tag in line for tag in self.CAREGIVER_TAGS):
-                    # strip “[00:03] ” and the speaker tag
-                    clean = re.sub(r"^\s*\[\d{1,2}:\d{2}\]\s*", "", line)
-                    clean = clean.split(":", 1)[-1].strip()
-                    if clean:
-                        care_lines.append(clean)
+                    txt = re.sub(r"^\s*\[\d{1,2}:\d{2}\]\s*", "", line)
+                    txt = txt.split(":", 1)[-1].strip()
+                    if txt:
+                        care_lines.append(txt)
 
-            # 2️⃣ run model sentence-by-sentence
-            results: List[Dict[str, Any]] = []
-            max_irony = 0.0
-            for line in care_lines or [raw]:  # fallback to whole text
-                txt = line[-self.max_chars :]
-                raw_preds = self.pipe(txt, top_k=None)
-                preds = raw_preds[0] if isinstance(raw_preds, list) and isinstance(raw_preds[0], list) else raw_preds
-                scores = {}
-                for p in preds:
-                    if isinstance(p, dict) and "label" in p and "score" in p:
-                        scores[p["label"].lower()] = p["score"]
-                p_irony = scores.get("irony") or scores.get("label_1") or 0.0
-                p_non = scores.get("non_irony") or scores.get("label_0") or 1.0 - p_irony
+            if not care_lines:
+                care_lines = [transcript]  # fallback
 
-                results.append(
-                    {
-                        "text": txt,
-                        "prob_irony": round(float(p_irony), 4),
-                        "prob_non_irony": round(float(p_non), 4),
-                    }
+            sarcasm_scores, max_irony = [], 0.0
+
+            for line in care_lines:
+                clean = self._preprocess(line)[-self.max_chars:]
+
+                preds = self.pipe(clean, top_k=None)
+                if isinstance(preds, dict):
+                    preds = [preds]
+
+                prob_irony = {p["label"]: p["score"] for p in preds}.get(
+                    self.LBL_IRONY, 0.0
                 )
-                if p_irony > max_irony:
-                    max_irony = p_irony
+
+                # Heuristic down-weight for ultra-short neutral lines
+                if len(line) < 25 or len(line.split()) < 4:
+                    prob_irony = min(prob_irony, 0.30)
+
+                sarcasm_scores.append(round(prob_irony, 3))
+                max_irony = max(max_irony, prob_irony)
 
             return {
-                "sarcasm": round(float(max_irony), 3),
-                "sarcasm_lines": results,
+                "sarcasm": round(max_irony, 3),
+                "sarcasm_scores": sarcasm_scores,
             }
 
-        except Exception as e:
-            logger.exception(f"[SarcasmDetectionAgent] Error: {e}")
+        except Exception as exc:
+            logger.exception("[Sarcasm] crash")
             return {
                 "sarcasm": 0.0,
-                "sarcasm_lines": [],
-                "error": str(e),
+                "sarcasm_scores": [],
+                "error": str(exc),
             }

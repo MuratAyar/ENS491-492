@@ -1,0 +1,39 @@
+{
+  "transcript": "[07:45] Child: My tummy hurts again…\n[07:47] Caregiver: Oh no, sweetie. Remember the doctor said we take your medicine when that happens.\n[07:51] Child: I don't like the taste.\n[07:53] Caregiver: I know it’s icky, but it helps the pain go away. Let’s take one spoon together and then we can sip some juice.\n[07:59] Child: Okay…\n[08:02] Caregiver: Good job! Now come cuddle on the couch; we’ll read your favorite book while the medicine works.",
+  "toxicity_scores": [
+    0.002,
+    0.001,
+    0.028
+  ],
+  "toxicity": 0.028,
+  "abuse_flag": false,
+  "sentiment": "Neutral",
+  "sentiment_score": -0.081,
+  "sentiment_scores": [
+    -0.932,
+    0.0,
+    -0.959,
+    0.487,
+    0.0,
+    0.92
+  ],
+  "tone": 9,
+  "empathy": 7,
+  "responsiveness": 9,
+  "primary_category": "Encouragement",
+  "secondary_categories": [
+    "Instruction",
+    "Family"
+  ],
+  "sarcasm": 0.265,
+  "sarcasm_scores": [
+    0.247,
+    0.066,
+    0.265
+  ],
+  "caregiver_score": 8,
+  "justification": "The caregiver shows understanding and support while addressing the child's concerns about taking medicine.",
+  "send_notification": false,
+  "parent_notification": "",
+  "recommendations": []
+}

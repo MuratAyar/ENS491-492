@@ -1,0 +1,39 @@
+{
+  "transcript": "[15:12] Child: Look, I built a tower with all the blocks!\n[15:14] Caregiver: Wow, that’s super tall! Can you count how many blocks you used?\n[15:18] Child: One, two, three… eight!\n[15:20] Caregiver: Eight blocks—great counting! Want to build another next to it?\n[15:23] Child: Yes! This one will be even taller.\n[15:26] Caregiver: Let’s try. I’ll hand you the blue block—ready?",
+  "toxicity_scores": [
+    0.003,
+    0.003,
+    0.005
+  ],
+  "toxicity": 0.005,
+  "abuse_flag": false,
+  "sentiment": "Positive",
+  "sentiment_score": 0.441,
+  "sentiment_scores": [
+    0.0,
+    0.909,
+    0.0,
+    0.864,
+    0.873,
+    0.0
+  ],
+  "tone": 8,
+  "empathy": 9,
+  "responsiveness": 9,
+  "primary_category": "Encouragement",
+  "secondary_categories": [
+    "Instruction",
+    "Emotional Support"
+  ],
+  "sarcasm": 0.231,
+  "sarcasm_scores": [
+    0.077,
+    0.231,
+    0.027
+  ],
+  "caregiver_score": 9,
+  "justification": "The caregiver shows enthusiasm and encouragement towards the child's creativity. They engage in conversation, asking questions, and provide support for the child's activity.",
+  "send_notification": false,
+  "parent_notification": "",
+  "recommendations": []
+}

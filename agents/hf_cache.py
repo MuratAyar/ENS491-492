@@ -40,34 +40,6 @@ def get_toxicity_pipe():
 
 
 @lru_cache(maxsize=1)
-def get_xlm_sentiment_pipe():
-    return pipeline(
-        "text-classification",
-        model="cardiffnlp/twitter-xlm-roberta-base-sentiment",
-        device=_DEVICE,
-    )
-
-
-@lru_cache(maxsize=1)
-def get_emotion_pipe():
-    return pipeline(
-        "text-classification",
-        model="bhadresh-savani/distilbert-base-uncased-emotion",
-        device=_DEVICE,
-    )
-
-
-@lru_cache(maxsize=1)
-def get_unbiased_toxic_roberta():
-    """Returns (tokenizer, model) for zero-shot abuse flagging."""
-    name = "unitary/unbiased-toxic-roberta"
-    tok = AutoTokenizer.from_pretrained(name)
-    mdl = AutoModelForSequenceClassification.from_pretrained(name).to(
-        "cuda" if _DEVICE == 0 else "cpu"
-    )
-    return tok, mdl
-
-@lru_cache(maxsize=1)
 def get_sarcasm_pipe():
     """
     Sarcasm / irony detector → Cardiff NLP RoBERTa.
@@ -93,3 +65,16 @@ def get_sarcasm_pipe():
         return lambda txt, **_: [[{"label": "non_irony", "score": 1.0},
                                   {"label": "irony",      "score": 0.0}]]
 
+# -------------------------  CATEGORIZER  ------------------------------
+@lru_cache(maxsize=1)
+def get_categorizer_pipe():
+    """
+    Zero-shot konu sınıflandırıcısı → facebook/bart-large-mnli.
+    Çok kez çağrılsa da yalnızca tek seferde belleğe yüklenir.
+    """
+    return pipeline(
+        "zero-shot-classification",
+        model="facebook/bart-large-mnli",
+        tokenizer="facebook/bart-large-mnli",
+        device=_DEVICE,
+    )

@@ -1,0 +1,19 @@
+{
+  "input": {
+    "transcript": "\n[00:01] Child: Mom, I drew a dinosaur on the living-room wall!\n[00:04] Caregiver: Oh, perfect\u2014because that\u2019s exactly where priceless art belongs, right?\n[00:07] Child: Do you like it?\n[00:09] Caregiver: Absolutely, the Louvre is going to beg to borrow our wall now.\n[00:12] Child: Really?\n[00:14] Caregiver: (laughs) Not quite, sweetheart\u2014but the drawing is very creative.\n[00:18] Child: Should I clean it?\n[00:20] Caregiver: Let\u2019s grab a damp cloth and make it a *portable* masterpiece instead.\n"
+  },
+  "output": {
+    "toxicity_scores": [
+      0.024,
+      0.002,
+      0.002
+    ],
+    "toxicity": 0.024,
+    "abuse_flag": false,
+    "abuse_sentences": [
+      0,
+      1,
+      2
+    ]
+  }
+}

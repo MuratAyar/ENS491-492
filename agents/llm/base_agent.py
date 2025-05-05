@@ -1,8 +1,3 @@
-"""
-Shared Ollama client – every sub-agent inherits from here.
-Default model is Qwen-7B, but can be overridden per agent.
-"""
-
 import json
 import requests
 from typing import Dict, Any
