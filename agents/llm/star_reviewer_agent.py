@@ -20,7 +20,7 @@ class StarReviewerAgent(BaseAgent):
                 "Given a full analysis context, rate the caregiver on a 1-10 scale.\n"
                 "Return STRICT JSON with keys:\n"
                 "{ caregiver_score:int(1-10), tone:int(1-10), empathy:int(1-10), "
-                "responsiveness:int(1-10), justification:str }"
+                "responsiveness:int(1-10), summary:str(max 20 words), justification:str(max 20 words) }"
             )
         )
 
@@ -43,6 +43,11 @@ class StarReviewerAgent(BaseAgent):
             Evaluate the ADULT caregiver’s overall performance on a **1-10** scale
             (10 = outstanding).  Also give 1-10 sub-scores for tone, empathy and
             responsiveness.  Base your judgement ONLY on the numbers & dialogue below.
+            
+            Also return:
+            • "summary": 1-sentence (≤20 words), what happened — no judgment.  
+            • "justification": 1-sentence (≤20 words), why this score.
+
             Return STRICT JSON – no extra keys.
 
             ### NUMERICAL CONTEXT
@@ -63,6 +68,7 @@ class StarReviewerAgent(BaseAgent):
             "tone": 1-10,
             "empathy": 1-10,
             "responsiveness": 1-10,
+            "summary": "...",
             "justification": "..."
             }}
             """
@@ -80,6 +86,7 @@ class StarReviewerAgent(BaseAgent):
 
             keys = ["caregiver_score", "tone", "empathy", "responsiveness"]
             out = {k: _clamp(raw.get(k, 0)) for k in keys}
+            out["summary"] = raw.get("summary", "No summary.")
             out["justification"] = raw.get("justification", "No explanation.")
             return out
 
@@ -87,5 +94,5 @@ class StarReviewerAgent(BaseAgent):
             logger.exception("[StarReviewer] crash")
             return {
                 "caregiver_score": 0, "tone": 0, "empathy": 0,
-                "responsiveness": 0, "justification": f"Error: {e}"
+                "responsiveness": 0, "summary": f"Error: {e}", "justification": f"Error: {e}"
             }

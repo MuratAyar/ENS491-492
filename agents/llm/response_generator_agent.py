@@ -12,8 +12,8 @@ from .base_agent import BaseAgent
 logger = logging.getLogger("care_monitor")
 
 IMPORTANT_CATEGORIES = {
-    "Nutrition", "Health", "Safety & Security", "Medication",
-    "Crying", "Accident", "Sleep", "Screen Time"
+    "Feeding", "Health", "Safety", "Medication",
+    "Emotions", "Accident", "Sleep-Routine", "Devices"
 }
 
 class ResponseGeneratorAgent(BaseAgent):
@@ -29,13 +29,14 @@ class ResponseGeneratorAgent(BaseAgent):
                 "First decide whether parents need a push-notification.\n"
                 "If NOT, return:\n"
                 '{ "send_notification": false }\n'
-                "If YES, write a warm parent_notification paragraph and up to 3 "
-                "actionable recommendations (category + 1-sentence). "
-                "Return STRICT JSON with keys:\n"
-                '{ "send_notification": true, '
-                '"parent_notification": str, '
-                '"recommendations": [ { "category": str, "description": str } ] }'
-            )
+                "If YES, return STRICT JSON exactly like this:\n"
+                '{ "send_notification": true,\n'
+                '  "parent_notification": "string (≤180 characters)",\n'
+                '  "recommendations": [\n'
+                '    { "category": "string", "description": "string (≤140 characters)" }\n'
+                '  ]\n'
+                '}'          # ← burada bitiyor
+            ),
         )
 
         # optional best-practice retrieval (same as önceki kod)
@@ -118,22 +119,39 @@ class ResponseGeneratorAgent(BaseAgent):
             "recommendations":[{{"category":"...","description":"..."}}]}}
             """
             raw = self._query_ollama(prompt)
-            data = self._extract_json(raw if isinstance(raw, str) else json.dumps(raw))
 
+            # LLM çıktısını güvenli şekilde ayrıştır
+            if isinstance(raw, dict):
+                raw_str = raw.get("raw_output", "")
+                if isinstance(raw_str, str) and raw_str.strip().startswith("{"):
+                    data = self._extract_json(raw_str)
+                else:
+                    data = raw
+            elif isinstance(raw, str):
+                data = self._extract_json(raw)
+            else:
+                data = self._extract_json(str(raw))
+
+            # Tavsiyeleri işleyip sınırla
             recs: List[Any] = data.get("recommendations", [])
+
             if isinstance(recs, dict):
                 recs = [recs]
             elif isinstance(recs, str):
                 recs = [{"category": "General", "description": recs}]
 
             data["recommendations"] = [
-                {"category": r.get("category", "General"),
-                 "description": r.get("description", "")[:140]}
+                {
+                    "category": r.get("category", "General"),
+                    "description": r.get("description", "")[:140],
+                }
                 for r in recs[:3]
             ]
+
             data.setdefault("parent_notification", "")
             return data
-
+        # --------------------------------------------------------
+        # Hata durumunda varsayılan değerler
         except Exception as exc:
             logger.exception("[ParentNotifier] crashed")
             return {"send_notification": False,

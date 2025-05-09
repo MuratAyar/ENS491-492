@@ -9,9 +9,8 @@ class ToxicityAgent:
     """
     CAREGIVER_TAGS = ("Caregiver:", "Mother:", "Woman:", "Dad:", "Mum:")
 
-    def __init__(self, th_hard=.75, th_soft=.45, sarcasm_boost=.30):
+    def __init__(self):
         self.pipe = get_toxicity_pipe()
-        self.hard, self.soft, self.sb = th_hard, th_soft, sarcasm_boost
 
     def _caregiver_lines(self, text: str) -> List[str]:
         lines = []
@@ -33,10 +32,8 @@ class ToxicityAgent:
         scores = [max(p, key=lambda x: x["score"])["score"] for p in preds]
 
         tox_max, tox_mean = max(scores), sum(scores)/len(scores)
-        abuse_flag = (tox_max >= self.hard) or (tox_mean >= self.soft and sarcasm >= self.sb)
 
         return {
             "toxicity_scores": [round(s, 3) for s in scores],
             "toxicity": round(tox_max, 3),
-            "abuse_flag": abuse_flag           # abuse_sentences kaldırıldı
         }

@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+pydantic
+firebase-admin
+python-dotenv  # if you want env‑files

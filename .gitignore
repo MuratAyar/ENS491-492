@@ -1,1 +1,3 @@
-serviceAccountKey.json
+.env
+*.env
+firebase/serviceAccountKey.json

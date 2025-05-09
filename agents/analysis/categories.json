@@ -1,0 +1,47 @@
+{
+  "Feeding": [
+    "Breakfast", "Lunch", "Dinner", "Snack Time",
+    "Refusing to Eat", "Finishing Food", "Feeding Support"
+  ],
+
+  "Emotions": [
+    "Crying", "Comforting", "Scolding", "Praising", "Reassuring"
+  ],
+
+  "Devices": [
+    "Watching TV", "Tablet Use", "Screen Time"
+  ],
+
+  "Health": [
+    "Doctor Talk", "Fever", "Injury", "Cough", "Sneezing", "Medication"
+  ],
+
+  "Safety": [
+    "Physical Danger", "Running Off", "Yelling", "Unusual Behavior"
+  ],
+
+  "Learning": [
+    "Storytelling", "Reading", "Instruction", "Drawing", "Educational Play",
+    "Homework Help", "Learning Letters", "Learning Numbers"
+  ],
+
+  "Sleep-Routine": [
+    "Bedtime", "Nap Time", "Waking Up", "Refusing to Sleep",
+    "Bath Time", "Tooth Brushing", "Getting Dressed", "Diaper Change",
+    "Potty Time", "Hand Washing"
+  ],
+
+  "Play": [
+    "Toy Sharing", "Playing Outside", "Building Blocks",
+    "Game Time", "Pretend Play", "Park Visit"
+  ],
+
+  "Caregiver-State": [
+    "Caregiver Stress", "Caregiver Phone Use", "Caregiver Ignoring",
+    "Caregiver Fatigue"
+  ],
+
+  "General": [
+    "General Conversation", "Small Talk", "Chit Chat", "Uncategorized"
+  ]
+}

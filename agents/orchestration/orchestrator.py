@@ -1,129 +1,145 @@
+# orchestrator.py
+from __future__ import annotations
 from typing import Dict, Any
 import json, re, logging, asyncio
 from datetime import datetime
 import langdetect
 import argostranslate.package, argostranslate.translate
 
-# Import agents
-from agents.llm.response_generator_agent import ResponseGeneratorAgent
-from agents.llm.star_reviewer_agent import StarReviewerAgent
-
-from agents.analysis.analyzer_agent import AnalyzerAgent
-from agents.analysis.categorizer_agent import CategorizerAgent
-from agents.analysis.toxicity_agent import ToxicityAgent
+# ────────── Agents
+from agents.analysis.analyzer_agent          import AnalyzerAgent
+from agents.analysis.categorizer_agent       import CategorizerAgent
+from agents.analysis.toxicity_agent          import ToxicityAgent
 from agents.analysis.sarcasm_detection_agent import SarcasmDetectionAgent
+from agents.llm.star_reviewer_agent          import StarReviewerAgent
+from agents.llm.response_generator_agent     import ResponseGeneratorAgent
 
-# Setup logger
 logger = logging.getLogger("care_monitor")
 
 class Orchestrator:
-    """Runs all sub-agents in sequence and returns a combined result."""
-    
-    def __init__(self):
-        self.use_translation = False
-        self.analyzer_agent = AnalyzerAgent()
-        self.categorizer_agent = CategorizerAgent()
-        self.star_reviewer_agent = StarReviewerAgent()
-        self.response_generator_agent = ResponseGeneratorAgent()
-        self.tox_agent = ToxicityAgent()
-        self.sarcasm_agent= SarcasmDetectionAgent()
+    """Runs all sub-agents and returns the merged context."""
 
-    # ------------------------------------------------------------------
-    def set_translation_flag(self, flag: bool):
-        """Enable/disable Argos-Translate on the fly (called from Streamlit)."""
+    # ─────────────────────────── init
+    def __init__(self) -> None:
+        self.use_translation = False
+        self.analyzer_agent   = AnalyzerAgent()
+        self.categorizer_agent= CategorizerAgent()
+        self.tox_agent        = ToxicityAgent()
+        self.sarcasm_agent    = SarcasmDetectionAgent()
+        self.star_agent       = StarReviewerAgent()
+        self.resp_agent       = ResponseGeneratorAgent()
+
+    # ─────────────────────────── helpers
+    def set_translation_flag(self, flag: bool) -> None:
         self.use_translation = bool(flag)
 
-     # ------------------------------------------------------------------
     def _detect_and_translate(self, text: str) -> Dict[str, Any]:
-         """Run ONLY if self.use_translation is True."""
-         if not self.use_translation:
-             return {"transcript": text, "original_language": "en"}
-         try:
-             lang = langdetect.detect(text)
-         except Exception:
-             return {"transcript": text, "original_language": "unknown"}
-         if lang.lower() == "en":
-             return {"transcript": text, "original_language": "en"}
-         # try cheap ArgosTranslate lookup
-         try:
-             inst = argostranslate.translate
-             src = next((l for l in inst.get_installed_languages()
-                         if l.code.startswith(lang)), None)
-             tgt = next((l for l in inst.get_installed_languages()
-                         if l.code.startswith("en")), None)
-             if src and tgt:
-                 text = src.get_translation(tgt).translate(text)
-                 return {"transcript": text,
-                         "original_language": lang,
-                         "translation_used": True}
-         except Exception:
-             pass
-         return {"transcript": text, "original_language": lang,
-                 "translation_used": False}
+        if not self.use_translation:
+            return {"transcript": text, "original_language": "en"}
 
+        try:
+            lang = langdetect.detect(text)
+        except Exception:
+            return {"transcript": text, "original_language": "unknown"}
+
+        if lang.lower() == "en":
+            return {"transcript": text, "original_language": "en"}
+
+        try:                      # cheap Argos-Translate fallback
+            inst = argostranslate.translate
+            src  = next((l for l in inst.get_installed_languages()
+                         if l.code.startswith(lang)), None)
+            tgt  = next((l for l in inst.get_installed_languages()
+                         if l.code.startswith("en")), None)
+            if src and tgt:
+                text = src.get_translation(tgt).translate(text)
+                return {"transcript": text,
+                        "original_language": lang,
+                        "translation_used": True}
+        except Exception:
+            pass
+        return {"transcript": text, "original_language": lang,
+                "translation_used": False}
+
+    # ─────────────────────────── abuse decision
+    @staticmethod
+    def _decide_abuse(ctx: Dict[str, Any]) -> bool:
+        t_max  = ctx.get("toxicity", 0.0)
+        t_scores = ctx.get("toxicity_scores", 0.0)
+        sent_s = ctx.get("sentiment_score", 0.0)
+        irony  = ctx.get("sarcasm", 0.0)
+        group  = ctx.get("category_group", "General")
+        cg_score = ctx.get("caregiver_score", 0)
+
+        t_mean = sum(t_scores) / len(t_scores) if isinstance(t_scores, list) and t_scores else 0.0
+
+        # 1) Sert toksik konuşma
+        if t_max >= 0.60:
+            return True
+
+        # 2) Orta toksisite + güçlü negatif duygu
+        if t_max >= 0.45 and sent_s <= -0.5 and irony < 0.4:
+            return True
+
+        # 3) Düşük alay, yüksek negatiflik
+        if t_mean >= 0.35 and sent_s <= -0.3 and irony < 0.3:
+            return True
+
+        # 4) Kritik konularda orta toksisite
+        if group in {"Safety", "Health", "Discipline"} and t_max >= 0.45:
+            return True
+
+        # 5) Sarkazm + az da olsa toksisite → pasif agresif
+        if irony >= 0.80 and t_max >= 0.005:   # ← burası kritik fark!
+            return True
+
+        # 6) Empati düşüklüğü + alay + CG düşükse
+        if cg_score <= 3 and irony >= 0.7:
+            return True
+
+        return False
+
+
+    # ─────────────────────────── main pipeline
     async def process_transcript(self, transcript: str) -> Dict[str, Any]:
-        """Process the input transcript through all analysis agents."""
         ctx: Dict[str, Any] = {}
         try:
-            # 1. Language detection and optional translation
-            lang_result = self._detect_and_translate(transcript)
-            logger.debug(f"[Orchestrator] LanguageSwitchAgent → {lang_result}")
-            if "error" in lang_result:
-                print(f"[Orchestrator] Language detection error: {lang_result['error']}")
+            # 1. language / translation
+            lang_res = self._detect_and_translate(transcript)
             ctx.update({"transcript": transcript})
-            ctx.update(lang_result)
-            transcript_to_analyze = ctx["transcript"]
+            ctx.update(lang_res)
+            txt = ctx["transcript"]
 
-            # 2-4. Parallel quick analysis: toxicity, sentiment & tone, topic categorization
-            tasks: list = [
-                self.tox_agent.run([{"content": json.dumps({"transcript": transcript_to_analyze})}]),
-                self.analyzer_agent.run([{"content": json.dumps({"transcript": transcript_to_analyze})}]),
-                self.categorizer_agent.run([{"content": json.dumps({"transcript": transcript_to_analyze})}]),
-                self.sarcasm_agent.run([{"content": json.dumps({"transcript": transcript_to_analyze})}])
-            ]
-            tox_result, analysis_result, categorization_result, sarcasm_result = await asyncio.gather(*tasks)
-
-            logger.debug(f"[Orchestrator] ToxicityAgent → {tox_result}")
-            logger.debug(f"[Orchestrator] AnalyzerAgent → {analysis_result}")
-            logger.debug(f"[Orchestrator] CategorizerAgent → {categorization_result}")
-
-            ctx.update(tox_result if isinstance(tox_result, dict) else {})
-            ctx.update(analysis_result if isinstance(analysis_result, dict) else {})
-            ctx.update(categorization_result if isinstance(categorization_result, dict) else {})
-            ctx.update(sarcasm_result if isinstance(sarcasm_result, dict) else {})
-
-            # ── decide which heavy agents we really need ─────────────────────────
-            sentiment      = ctx.get("sentiment", "Neutral")
-            tox_score      = ctx.get("toxicity", 0.0)          # 0-1 float
-            sarcasm        = ctx.get("sarcasm", 0.0)
-
-            # 5. Caregiver scoring (empathy, responsiveness, engagement)
-            scoring_result = await self.star_reviewer_agent.run(ctx)
-
-            logger.debug(f"[Orchestrator] StarReviewerAgent → {scoring_result}")
-            if isinstance(scoring_result, dict) and "error" in scoring_result:
-                return scoring_result
-            if isinstance(scoring_result, str):
-                try:
-                    scoring_result = json.loads(scoring_result)
-                except json.JSONDecodeError:
-                    return {"error": "Star reviewer output is not valid JSON."}
-            ctx.update(scoring_result)
-
-            # 7-10. Heavy analysis (run conditionally)
+            # 2. fast parallel agents
             tasks = [
-                self.response_generator_agent.run([{"content": json.dumps(ctx)}]),
+                self.tox_agent.run       ([{"content": json.dumps({"transcript": txt})}]),
+                self.analyzer_agent.run  ([{"content": json.dumps({"transcript": txt})}]),
+                self.categorizer_agent.run([{"content": json.dumps({"transcript": txt})}]),
+                self.sarcasm_agent.run   ([{"content": json.dumps({"transcript": txt})}]),
             ]
+            tox_r, ana_r, cat_r, sar_r = await asyncio.gather(*tasks)
+            for r in (tox_r, ana_r, cat_r, sar_r):
+                if isinstance(r, dict):
+                    ctx.update(r)
 
-            response_result, = await asyncio.gather(*tasks)
+            # 3. caregiver scoring
+            score_r = await self.star_agent.run(ctx)
+            if isinstance(score_r, dict):
+                ctx.update(score_r)
 
-            logger.debug(f"[Orchestrator] ResponseGeneratorAgent → {response_result}")
-            if response_result: ctx.update(response_result)
+            # 4. parent notification (heavy)
+            resp_r, = await asyncio.gather(
+                self.resp_agent.run([{"content": json.dumps(ctx)}])
+            )
+            if isinstance(resp_r, dict):
+                ctx.update(resp_r)
 
-            # 11. Global abuse flag
-            ctx["abuse_flag"] = bool(ctx.get("abusive", False) or ctx.get("toxicity", False))
+            # 5. global abuse flag with multi-signal heuristic
+            ctx["abuse_flag"] = self._decide_abuse(ctx)
+
+            # timestamp / id assignment is handled upstream
             return ctx
 
-        except Exception as e:
-            logger.exception("[Orchestrator] Unexpected error")
-            return {"error": "Orchestrator failed: " + str(e)}
+        except Exception as exc:
+            logger.exception("[Orchestrator] crash")
+            return {"error": f"Orchestrator failed: {exc}"}

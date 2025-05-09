@@ -1,105 +1,74 @@
+# agents/categorizer_agent.py
+from __future__ import annotations
 from typing import Dict, Any, List
-import json, logging, os
+import json, logging, pathlib
 
-from agents.hf_cache import get_categorizer_pipe  # <- önbellekli model
+from agents.hf_cache import get_categorizer_pipe   # facebook/bart-large-mnli
 
 logger = logging.getLogger("CategorizerAgent")
-logger.setLevel(logging.DEBUG)
-handler = logging.StreamHandler()
-handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler())
 
 
 class CategorizerAgent:
     """
-    Granüler bakım konularına göre caregiver-child konuşmalarını sınıflandırır.
-    Model, hf_cache.get_categorizer_pipe() üzerinden tek seferde belleğe alınır.
+    Caregiver–child konuşmasını “alt kategori” ve “üst kategori” (category_group)
+    olarak etiketler.  Zero-shot → facebook/bart-large-mnli
     """
 
-    def __init__(self):
-        self.name = "Categorizer"
-        self.instructions = (
-            "Categorize caregiver-child conversations into caregiving topics."
-        )
+    def __init__(self) -> None:
         self.pipe = get_categorizer_pipe()
+        self.groups, self.labels, self.reverse = self._load_structure()
 
-        # Kategori listesini yükle / fallback
-        self.categories: List[str] = self._load_categories()
-
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ helpers
     @staticmethod
-    def _load_categories() -> List[str]:
+    def _load_structure():
         """
-        'categories.json' varsa onu kullan; yoksa default liste döndür.
+        categories.json   →  Dict[str, List[str]]
+        Dönen:
+            groups   : orijinal dict
+            labels   : düz liste (candidate_labels)
+            reverse  : alt_etiket  ➜  üst_kategori
         """
-        try:
-            with open("categories.json", "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return [
-                "Breakfast",
-                "Lunch",
-                "Dinner",
-                "Sleep",
-                "Playtime",
-                "Storytelling",
-                "TV",
-                "Hygiene",
-                "Discipline",
-                "Emotional Support",
-                "Encouragement",
-                "Instruction",
-                "Caregiver Stress",
-                "Crying",
-                "Silence",
-                "Yelling",
-                "Danger",
-                "Health",
-                "Learning",
-                "Family",
-                "Outdoor",
-            ]
+        base = pathlib.Path(__file__).parent
+        path = base / "categories.json"
+        with open(path, "r", encoding="utf-8") as f:
+            groups: Dict[str, List[str]] = json.load(f)
 
-    # ------------------------------------------------------------------
-    async def run(self, messages: list[Dict[str, Any]]) -> Dict[str, Any]:
+        labels, reverse = [], {}
+        for parent, subs in groups.items():
+            for s in subs:
+                labels.append(s)
+                reverse[s] = parent
+        return groups, labels, reverse
+
+    # ------------------------------------------------------------------ main
+    async def run(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Beklenen mesaj formatı:
-        {
-          "role": "user",
-          "content": "{\"transcript\": \"...\"}"
-        }
+        Mesaj formatı   {"role":"user","content":"{\"transcript\":\"…\"}"}
         """
         try:
-            data = json.loads(messages[-1]["content"])
-            transcript = data.get("transcript", "")
-            if not transcript.strip():
-                return {"error": "No transcript content for categorization."}
+            payload = json.loads(messages[-1]["content"])
+            txt = payload.get("transcript", "").strip()
+            if not txt:
+                return {"error": "Empty transcript"}
 
-            # Zero-shot sınıflandırma (ilk 512 karakter yeterli)
-            snippet = transcript[:512]
-            result = self.pipe(
-                snippet,
-                candidate_labels=self.categories,
-                multi_label=True,
-            )
+            snippet = txt[:512]                                  # ≈ ilk 512 karakter yeterli
+            out = self.pipe(snippet, candidate_labels=self.labels, multi_label=False)
 
-            # Sonuçları puana göre sırala
-            scored = sorted(
-                zip(result["labels"], result["scores"]),
-                key=lambda x: x[1],
-                reverse=True,
-            )
+            best_label = out["labels"][0] if out["labels"] else "Uncategorized"
+            group      = self.reverse.get(best_label, "General")
 
-            primary = scored[0][0] if scored else "Uncategorized"
-            secondary = [lbl for lbl, _ in scored[1:3]] if len(scored) > 2 else []
+            # En yüksek skora sahip 2 alt etiket daha (sekonder)
+            ranked = list(zip(out["labels"], out["scores"]))
+            secondary = [l for l, _ in ranked[1:3] if l != best_label]
 
             return {
-                "primary_category": primary,
-                "secondary_categories": secondary,
+                "primary_category"   : best_label,   # örn. "Refusing to Eat"
+                "category_group"     : group,        # örn. "Feeding"
+                "secondary_categories": secondary    # isteğe bağlı
             }
 
-        except Exception as exc:
-            logger.exception("[Categorizer] Categorization failed.")
-            return {"error": "Categorization error.", "detail": str(exc)}
+        except Exception as e:
+            logger.exception("CategorizerAgent failed")
+            return {"error": str(e)}
