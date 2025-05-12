@@ -36,6 +36,7 @@ class AnalyzerAgent:
             results = self.pipe(lines, batch_size=self.batch)
 
             score_list = []
+            weights = []
             for r in results:
                 if isinstance(r, list):
                     r = {x['label']: x['score'] for x in r}
@@ -43,23 +44,40 @@ class AnalyzerAgent:
                     r = {r['label']: r['score']}
                 pos = r.get("LABEL_2", 0.0)
                 neg = r.get("LABEL_0", 0.0)
-                score_list.append(round(pos - neg, 3))
+                score = round(pos - neg, 3)
+                score_list.append(score)
 
-            avg = sum(score_list) / len(score_list)
-            overall = "Positive" if avg > 0.2 else "Negative" if avg < -0.2 else "Neutral"
+                # ❗ Negatif cümlelere daha fazla ağırlık ver
+                if score < -0.5:
+                    weights.append(2.5)  # çok negatif
+                elif score < -0.2:
+                    weights.append(1.5)
+                else:
+                    weights.append(1.0)  # normal ağırlık
 
-            tone  = "Harsh" if overall == "Negative" else "Playful" if overall == "Positive" else "Calm"
+            # 🎯 Ağırlıklı ortalama hesapla
+            weighted_sum = sum(s * w for s, w in zip(score_list, weights))
+            total_weight = sum(weights)
+            weighted_avg = weighted_sum / total_weight if total_weight > 0 else 0.0
+
+            overall = (
+                "Positive" if weighted_avg > 0.2
+                else "Negative" if weighted_avg < -0.2
+                else "Neutral"
+            )
+            tone = "Harsh" if overall == "Negative" else "Playful" if overall == "Positive" else "Calm"
             empathy = "High" if overall == "Positive" else "Low" if overall == "Negative" else "Moderate"
             responsiveness = "Engaged" if overall != "Negative" else "Passive"
 
             return {
                 "sentiment": overall,
-                "sentiment_score": round(avg, 3),
+                "sentiment_score": round(weighted_avg, 3),
                 "sentiment_scores": score_list,
                 "tone": tone,
                 "empathy": empathy,
                 "responsiveness": responsiveness
             }
+
 
         except Exception as e:
             logger.exception("[AnalyzerAgent] sentiment crash")

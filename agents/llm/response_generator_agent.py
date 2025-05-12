@@ -63,7 +63,8 @@ class ResponseGeneratorAgent(BaseAgent):
                     cat in IMPORTANT_CATEGORIES,
                     (tox > 0.35 and abs(sent) < 0.2),
                     (sarcasm > 0.88 and sent < 0.2),
-                    (cg_score <= 5 and tox > 0.2),
+                    (cg_score <= 5 and tox > 0.1),           # ✅ eşik düşürüldü
+                    (sent < -0.7 and cg_score <= 4),         # ✅ AŞIRI NEGATİF durum
                 ])
 
             # Hiç gerek yoksa hemen çık
