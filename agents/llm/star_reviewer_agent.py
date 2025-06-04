@@ -20,7 +20,7 @@ class StarReviewerAgent(BaseAgent):
                 "Given a full analysis context, rate the caregiver on a 1-10 scale.\n"
                 "Return STRICT JSON with keys:\n"
                 "{ caregiver_score:int(1-10), tone:int(1-10), empathy:int(1-10), "
-                "responsiveness:int(1-10), summary:str(max 20 words), justification:str(max 20 words) }"
+                "responsiveness:int(1-10), summary:str(max 20 words), abuse_flag:bool, justification:str(max 20 words) }"
             )
         )
 
@@ -69,6 +69,7 @@ class StarReviewerAgent(BaseAgent):
             "empathy": 1-10,
             "responsiveness": 1-10,
             "summary": "...",
+            "abuse_flag": true/false,
             "justification": "..."
             }}
             """
@@ -87,6 +88,7 @@ class StarReviewerAgent(BaseAgent):
             keys = ["caregiver_score", "tone", "empathy", "responsiveness"]
             out = {k: _clamp(raw.get(k, 0)) for k in keys}
             out["summary"] = raw.get("summary", "No summary.")
+            out["abuse_flag"] = bool(raw.get("abuse_flag", False))
             out["justification"] = raw.get("justification", "No explanation.")
             return out
 
@@ -94,5 +96,5 @@ class StarReviewerAgent(BaseAgent):
             logger.exception("[StarReviewer] crash")
             return {
                 "caregiver_score": 0, "tone": 0, "empathy": 0,
-                "responsiveness": 0, "summary": f"Error: {e}", "justification": f"Error: {e}"
+                "responsiveness": 0, "summary": f"Error: {e}", "abuse_flag": False, "justification": f"Error: {e}"
             }

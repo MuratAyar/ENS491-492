@@ -11,11 +11,6 @@ from .base_agent import BaseAgent
 
 logger = logging.getLogger("care_monitor")
 
-IMPORTANT_CATEGORIES = {
-    "Feeding", "Health", "Safety", "Medication",
-    "Emotions", "Accident", "Sleep-Routine", "Devices"
-}
-
 class ResponseGeneratorAgent(BaseAgent):
     """
     Decides if a parent-notification is warranted; if yes, generates it.
@@ -26,16 +21,12 @@ class ResponseGeneratorAgent(BaseAgent):
             name="ParentNotifier",
             instructions=(
                 "You are an expert paediatric caregiver assistant.\n"
-                "First decide whether parents need a push-notification.\n"
-                "If NOT, return:\n"
-                '{ "send_notification": false }\n'
-                "If YES, return STRICT JSON exactly like this:\n"
-                '{ "send_notification": true,\n'
-                '  "parent_notification": "string (≤180 characters)",\n'
-                '  "recommendations": [\n'
-                '    { "category": "string", "description": "string (≤140 characters)" }\n'
-                '  ]\n'
-                '}'          # ← burada bitiyor
+                "Parents will already receive this notification (send_notification=true).\n"
+                "Return STRICT JSON exactly like:\n"
+                '{ \"send_notification\": true,\n'
+                '  \"parent_notification\": \"string (≤180 characters)\",\n'
+                '  \"recommendations\": [ { \"category\": \"string\", \"description\": \"string (≤140 characters)\" } ]\n'
+                '}'
             ),
         )
 
@@ -50,30 +41,10 @@ class ResponseGeneratorAgent(BaseAgent):
     async def run(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         try:
             ctx = json.loads(messages[-1]["content"])
-
-            # ---------------- Heuristik kararı ----------------
-            def should_notify(ctx):
-                cat = ctx.get("primary_category", "General")
-                tox = ctx.get("toxicity", 0.0)
-                sent = ctx.get("sentiment_score", 0.0)
-                sarcasm = ctx.get("sarcasm", 0.0)
-                cg_score = ctx.get("caregiver_score", 5)
-
-                return any([
-                    cat in IMPORTANT_CATEGORIES,
-                    (tox > 0.35 and abs(sent) < 0.2),
-                    (sarcasm > 0.88 and sent < 0.2),
-                    (cg_score <= 5 and tox > 0.1),           # ✅ eşik düşürüldü
-                    (sent < -0.7 and cg_score <= 4),         # ✅ AŞIRI NEGATİF durum
-                ])
-
-            # Hiç gerek yoksa hemen çık
-            if not should_notify(ctx):
-                return {
-                    "send_notification": False,
-                    "parent_notification": "",
-                    "recommendations": []
-                }
+            if ctx.get("send_notification") is False:
+                return {"send_notification": False,
+                        "parent_notification": "",
+                        "recommendations": []}
 
              # ---------------- LLM’e prompt --------------------
             cat = ctx.get("primary_category", "General")
@@ -87,32 +58,25 @@ class ResponseGeneratorAgent(BaseAgent):
             tox_avg = ctx.get("toxicity", 0.0)
             sarcasm_avg = ctx.get("sarcasm", 0.0)
             caregiver_sc = ctx.get("caregiver_score", 5)
-
-            # best-practice snippet
-            best_docs = self.retriever.similarity_search(cat, k=2)
-            best_practices = "\n".join(d.page_content for d in best_docs)
+            tone_sc      = ctx.get("tone", 5)
+            empathy_sc   = ctx.get("empathy", 5)
+            abuse_flag   = ctx.get("abuse_flag", False)
 
             prompt = f"""
             ### TASK
-            Parents rely on concise, kind notifications. 1) Write ONE short paragraph
-            (parent_notification). 2) Provide up to 3 recommendations
-            (category + one sentence).
+            Write one supportive paragraph for parents (parent_notification) and up to 3 short recommendations.
 
             ### CONTEXT METRICS
             Category               : {cat}
-            Avg sentiment score    : {sent_avg:.3f}
-            Sentence sentiment[]   : {sent_scores}
-            Avg toxicity           : {tox_avg:.3f}
-            Toxicity per sentence[]: {tox_scores}
-            Avg sarcasm            : {sarcasm_avg:.3f}
-            Sarcasm per sent[]     : {sarcasm_scores}
+            Abuse flag             : {abuse_flag}
             Caregiver score (1-10) : {caregiver_sc}
+            Tone / Empathy / Resp. : {tone_sc} / {empathy_sc} / {ctx.get('responsiveness',5)}
+            Avg sentiment          : {sent_avg:.3f}
+            Avg toxicity           : {tox_avg:.3f}
+            Sarcasm avg            : {sarcasm_avg:.3f}
 
             ### CONVERSATION (trimmed)
             {transcript}
-
-            ### BEST PRACTICES
-            {best_practices}
 
             ### STRICT OUTPUT JSON
             {{"send_notification": true,

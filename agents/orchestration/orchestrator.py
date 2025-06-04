@@ -13,6 +13,8 @@ from agents.analysis.toxicity_agent          import ToxicityAgent
 from agents.analysis.sarcasm_detection_agent import SarcasmDetectionAgent
 from agents.llm.star_reviewer_agent          import StarReviewerAgent
 from agents.llm.response_generator_agent     import ResponseGeneratorAgent
+from agents.llm.should_notify_agent   import ShouldNotifyAgent
+
 
 logger = logging.getLogger("care_monitor")
 
@@ -28,6 +30,8 @@ class Orchestrator:
         self.sarcasm_agent    = SarcasmDetectionAgent()
         self.star_agent       = StarReviewerAgent()
         self.resp_agent       = ResponseGeneratorAgent()
+        self.decider_agent = ShouldNotifyAgent()
+
 
     # ─────────────────────────── helpers
     def set_translation_flag(self, flag: bool) -> None:
@@ -61,45 +65,6 @@ class Orchestrator:
         return {"transcript": text, "original_language": lang,
                 "translation_used": False}
 
-    # ─────────────────────────── abuse decision
-    @staticmethod
-    def _decide_abuse(ctx: Dict[str, Any]) -> bool:
-        t_max  = ctx.get("toxicity", 0.0)
-        t_scores = ctx.get("toxicity_scores", 0.0)
-        sent_s = ctx.get("sentiment_score", 0.0)
-        irony  = ctx.get("sarcasm", 0.0)
-        group  = ctx.get("category_group", "General")
-        cg_score = ctx.get("caregiver_score", 0)
-
-        t_mean = sum(t_scores) / len(t_scores) if isinstance(t_scores, list) and t_scores else 0.0
-
-        # 1) Sert toksik konuşma
-        if t_max >= 0.60:
-            return True
-
-        # 2) Orta toksisite + güçlü negatif duygu
-        if t_max >= 0.45 and sent_s <= -0.5 and irony < 0.4:
-            return True
-
-        # 3) Düşük alay, yüksek negatiflik
-        if t_mean >= 0.35 and sent_s <= -0.3 and irony < 0.3:
-            return True
-
-        # 4) Kritik konularda orta toksisite
-        if group in {"Safety", "Health", "Discipline"} and t_max >= 0.45:
-            return True
-
-        # 5) Sarkazm + az da olsa toksisite → pasif agresif
-        if irony >= 0.80 and t_max >= 0.005:   # ← burası kritik fark!
-            return True
-
-        # 6) Empati düşüklüğü + alay + CG düşükse
-        if cg_score <= 3 and irony >= 0.7:
-            return True
-
-        return False
-
-
     # ─────────────────────────── main pipeline
     async def process_transcript(self, transcript: str) -> Dict[str, Any]:
         ctx: Dict[str, Any] = {}
@@ -126,16 +91,23 @@ class Orchestrator:
             score_r = await self.star_agent.run(ctx)
             if isinstance(score_r, dict):
                 ctx.update(score_r)
+            
+            # 4. notification DECISION (LLM)
+            decide_r = await self.decider_agent.run(ctx)
+            ctx["send_notification"] = decide_r.get("notify", False)
+            ctx["notify_reason"]     = decide_r.get("reason", "")
 
-            # 4. parent notification (heavy)
-            resp_r, = await asyncio.gather(
-                self.resp_agent.run([{"content": json.dumps(ctx)}])
-            )
-            if isinstance(resp_r, dict):
-                ctx.update(resp_r)
-
-            # 5. global abuse flag with multi-signal heuristic
-            ctx["abuse_flag"] = self._decide_abuse(ctx)
+            # 5. parent notification (heavy)
+            if ctx["send_notification"]:
+                resp_r, = await asyncio.gather(
+                    self.resp_agent.run([{"content": json.dumps(ctx)}])
+                )
+                if isinstance(resp_r, dict):
+                    ctx.update(resp_r)
+            else:
+                # Boş placeholder – front-end karşılığı net olsun
+                ctx.update({"parent_notification": "",
+                            "recommendations": []})
 
             # timestamp / id assignment is handled upstream
             return ctx

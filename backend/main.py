@@ -22,9 +22,17 @@ from datetime import datetime, timezone
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 from typing import Any, Dict
 
+import aiofiles
+import json
+from pathlib import Path
+from google.cloud.firestore_v1 import DocumentSnapshot
+from datetime import datetime
+
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi import APIRouter
+from fastapi import UploadFile
 from pydantic import BaseModel, Field
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -139,4 +147,103 @@ async def get_aggregates(user_id: str):
         return {"status": "success", "data": data}
     except Exception as ex:
         logger.exception("Aggregation failed")
+        raise HTTPException(500, detail=str(ex))
+    
+@app.post("/batch_analyze")
+async def batch_analyze(
+    request: Request,
+    file: UploadFile,
+):
+    headers = dict(request.headers)
+    client_key = headers.get("x-api-key")
+    if client_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        # Read and parse JSON file
+        async with aiofiles.open(file.file.fileno(), mode='r') as f:
+            raw = await f.read()
+        items = json.loads(raw)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON file: {str(e)}")
+
+    results = []
+    for item in items:
+        try:
+            ctx = await run_pipeline_async(item["transcript"])
+            doc_id = uuid.uuid4().hex
+
+            firestore_data = {
+                **ctx,
+                "id": doc_id,
+                "user_id": item["user_id"],
+                "timestamp": SERVER_TIMESTAMP
+            }
+
+            db.collection("users")\
+              .document(item["user_id"])\
+              .collection("analysis_results")\
+              .document(doc_id).set(firestore_data)
+
+            ctx.update({
+                "id": doc_id,
+                "user_id": item["user_id"],
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            results.append({"status": "success", "data": ctx})
+        except Exception as e:
+            logger.error("Error analyzing entry: %s", e)
+            results.append({"status": "error", "user_id": item.get("user_id"), "detail": str(e)})
+
+    return {"summary": {"success": sum(r["status"] == "success" for r in results),
+                        "error": sum(r["status"] == "error" for r in results)},
+            "results": results}
+
+def clean_firestore_doc(doc: dict) -> dict:
+    """Datetime nesnelerini string'e çevirir."""
+    cleaned = {}
+    for k, v in doc.items():
+        if isinstance(v, datetime):
+            cleaned[k] = v.isoformat()
+        else:
+            cleaned[k] = v
+    return cleaned
+
+@app.get("/export_all_analysis")
+async def export_all_analysis(request: Request):
+    headers = dict(request.headers)
+    client_key = headers.get("x-api-key")
+    if client_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        users_ref = db.collection("users")
+        users = users_ref.stream()
+
+        all_results = []
+
+        for user_doc in users:
+            user_id = user_doc.id
+            results_ref = users_ref.document(user_id).collection("analysis_results")
+            result_docs = results_ref.stream()
+
+            for doc in result_docs:
+                raw = doc.to_dict()
+                raw = clean_firestore_doc(raw)  # 🧼 tarihleri düzelt
+                raw["user_id"] = user_id
+                raw["doc_id"] = doc.id
+                all_results.append(raw)
+
+        output_path = Path(__file__).resolve().parent / "all_analysis_results.json"
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(all_results, f, ensure_ascii=False, indent=2)
+
+        return FileResponse(
+            path=str(output_path),
+            filename="all_analysis_results.json",
+            media_type="application/json"
+        )
+
+    except Exception as ex:
+        logger.exception("Export failed")
         raise HTTPException(500, detail=str(ex))
