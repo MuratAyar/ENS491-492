@@ -1,47 +1,102 @@
 {
-  "Feeding": [
-    "Breakfast", "Lunch", "Dinner", "Snack Time",
-    "Refusing to Eat", "Finishing Food", "Feeding Support"
-  ],
+  "Meals": {
+    "merge_window_min": 30,
+    "items": [
+      "Breakfast", "Lunch", "Dinner", "Snack", "Refusing to Eat",
+      "Finishing Food", "Feeding Support"
+    ]
+  },
 
-  "Emotions": [
-    "Crying", "Comforting", "Scolding", "Praising", "Reassuring"
-  ],
+  "Sleep": {
+    "merge_window_min": 45,
+    "items": [
+      "Waking Up", "Nap", "Bedtime Routine", "Refusing to Sleep"
+    ]
+  },
 
-  "Devices": [
-    "Watching TV", "Tablet Use", "Screen Time"
-  ],
+  "Hygiene": {
+    "merge_window_min": 15,
+    "items": [
+      "Bath", "Tooth Brushing", "Hand Washing",
+      "Diaper Change", "Potty Time", "Getting Dressed"
+    ]
+  },
 
-  "Health": [
-    "Doctor Talk", "Fever", "Injury", "Cough", "Sneezing", "Medication"
-  ],
+  "Learning & Story": {
+    "merge_window_min": 20,
+    "items": [
+      "Storytelling", "Reading", "Instruction",
+      "Drawing", "Educational Play", "Homework Help",
+      "Letters & Numbers"
+    ]
+  },
 
-  "Safety": [
-    "Physical Danger", "Running Off", "Yelling", "Unusual Behavior"
-  ],
+  "Play": {
+    "merge_window_min": 20,
+    "items": [
+      "Toy Sharing", "Pretend Play", "Building Blocks",
+      "Game Time", "Park Visit", "Physical Play"
+    ]
+  },
 
-  "Learning": [
-    "Storytelling", "Reading", "Instruction", "Drawing", "Educational Play",
-    "Homework Help", "Learning Letters", "Learning Numbers"
-  ],
+  "Screens & Media": {
+    "merge_window_min": 10,
+    "items": [
+      "Watching TV", "Tablet Use", "Phone Use", "Screen Time"
+    ]
+  },
 
-  "Sleep-Routine": [
-    "Bedtime", "Nap Time", "Waking Up", "Refusing to Sleep",
-    "Bath Time", "Tooth Brushing", "Getting Dressed", "Diaper Change",
-    "Potty Time", "Hand Washing"
-  ],
+  "Emotions & Behaviour": {
+    "merge_window_min": 5,
+    "items": [
+      "Crying", "Comforting", "Scolding",
+      "Praising", "Reassuring", "Tantrum", "Apology"
+    ]
+  },
 
-  "Play": [
-    "Toy Sharing", "Playing Outside", "Building Blocks",
-    "Game Time", "Pretend Play", "Park Visit"
-  ],
+  "Health": {
+    "merge_window_min": 120,
+    "items": [
+      "Doctor Visit", "Fever", "Injury",
+      "Cough", "Sneezing", "Medication"
+    ]
+  },
 
-  "Caregiver-State": [
-    "Caregiver Stress", "Caregiver Phone Use", "Caregiver Ignoring",
-    "Caregiver Fatigue"
-  ],
+  "Safety": {
+    "merge_window_min": 30,
+    "items": [
+      "Physical Danger", "Running Off",
+      "Yelling", "Unusual Behaviour"
+    ]
+  },
 
-  "General": [
-    "General Conversation", "Small Talk", "Chit Chat", "Uncategorized"
-  ]
+  "Location & Travel": {
+    "merge_window_min": 20,
+    "items": [
+      "Left Home", "Arrived Home", "Car Ride",
+      "Public Transport", "At Playground", "At Store"
+    ]
+  },
+
+  "Caregiver State": {
+    "merge_window_min": 30,
+    "items": [
+      "Caregiver Stress", "Caregiver Fatigue",
+      "Caregiver Phone Use", "Caregiver Ignoring"
+    ]
+  },
+
+  "Milestones": {
+    "merge_window_min": 1440,
+    "items": [
+      "First Word", "First Steps", "New Skill"
+    ]
+  },
+
+  "General": {
+    "merge_window_min": 10,
+    "items": [
+      "General Conversation", "Small Talk", "Chit Chat", "Uncategorised"
+    ]
+  }
 }
